@@ -5,7 +5,11 @@ const { auth, adminOnly } = require('../middleware/auth');
 // GET /api/users — all users (auth required)
 router.get('/', auth, async (req, res) => {
   try {
-    const users = await User.find().select('-password').sort({ createdAt: -1 });
+    const users = await User.find()
+      .select('-password')
+      .populate('reportingManager', 'name email')
+      .populate('assignedProjects', 'name key')
+      .sort({ createdAt: -1 });
     res.json(users);
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
@@ -13,24 +17,42 @@ router.get('/', auth, async (req, res) => {
 // POST /api/users — admin creates user
 router.post('/', auth, adminOnly, async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, jobTitle, domain, phone, skills, reportingManager, assignedProjects } = req.body;
     if (!name || !email || !password) return res.status(400).json({ message: 'All fields required' });
     if (await User.findOne({ email })) return res.status(400).json({ message: 'Email already exists' });
-    const user = await User.create({ name, email, password, role: role || 'member' });
-    res.status(201).json(user);
+    const user = await User.create({
+      name,
+      email,
+      password,
+      role: role || 'member',
+      jobTitle: jobTitle || '',
+      domain: domain || 'Other',
+      phone: phone || '',
+      skills: skills || '',
+      reportingManager: reportingManager || undefined,
+      assignedProjects: assignedProjects || []
+    });
+    const populated = await User.findById(user._id)
+      .select('-password')
+      .populate('reportingManager', 'name email')
+      .populate('assignedProjects', 'name key');
+    res.status(201).json(populated);
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
 // PUT /api/users/:id — admin updates user
 router.put('/:id', auth, adminOnly, async (req, res) => {
   try {
-    const { name, email, role, active, password } = req.body;
-    const update = { name, email, role, active };
+    const { name, email, role, active, password, jobTitle, domain, phone, skills, reportingManager, assignedProjects } = req.body;
+    const update = { name, email, role, active, jobTitle, domain, phone, skills, reportingManager, assignedProjects };
     if (password) {
       const bcrypt = require('bcryptjs');
       update.password = await bcrypt.hash(password, 10);
     }
-    const user = await User.findByIdAndUpdate(req.params.id, update, { new: true }).select('-password');
+    const user = await User.findByIdAndUpdate(req.params.id, update, { new: true })
+      .select('-password')
+      .populate('reportingManager', 'name email')
+      .populate('assignedProjects', 'name key');
     if (!user) return res.status(404).json({ message: 'User not found' });
     res.json(user);
   } catch (err) { res.status(500).json({ message: err.message }); }

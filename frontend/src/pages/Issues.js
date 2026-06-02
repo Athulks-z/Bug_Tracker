@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
+import toast from 'react-hot-toast';
 
 const STATUS_OPTS = ['Open','To do','In progress','Reopen','Closed'];
 const SEV_OPTS = ['Showstopper','Major','Medium','Low','None'];
@@ -54,14 +55,16 @@ export default function Issues() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editIssue, setEditIssue] = useState(null);
-  const [form, setForm] = useState({ title:'', description:'', project:'', assignee:'', status:'Open', severity:'Medium' });
-  const [filters, setFilters] = useState({ status:'', severity:'', search:'' });
+  const [form, setForm] = useState({ title:'', description:'', project:'', assignee:'', status:'Open', severity:'Medium', dueDate:'' });
+  const [filters, setFilters] = useState({ project:'', status:'', severity:'', search:'' });
   const [saving, setSaving] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState('');
 
   const load = useCallback(() => {
     setLoading(true);
     const q = new URLSearchParams();
+    if (filters.project) q.set('project', filters.project);
     if (filters.status) q.set('status', filters.status);
     if (filters.severity) q.set('severity', filters.severity);
     if (filters.search) q.set('search', filters.search);
@@ -73,13 +76,21 @@ export default function Issues() {
 
   const openNew = () => {
     setEditIssue(null);
-    setForm({ title:'', description:'', project: projects[0]?._id||'', assignee:'', status:'Open', severity:'Medium' });
+    setForm({ title:'', description:'', project: projects[0]?._id||'', assignee:'', status:'Open', severity:'Medium', dueDate:'' });
     setError(''); setShowModal(true);
   };
 
   const openEdit = (issue) => {
     setEditIssue(issue);
-    setForm({ title:issue.title, description:issue.description||'', project:issue.project?._id||issue.project||'', assignee:issue.assignee?._id||issue.assignee||'', status:issue.status, severity:issue.severity });
+    setForm({
+      title: issue.title,
+      description: issue.description||'',
+      project: issue.project?._id||issue.project||'',
+      assignee: issue.assignee?._id||issue.assignee||'',
+      status: issue.status,
+      severity: issue.severity,
+      dueDate: issue.dueDate ? issue.dueDate.slice(0, 10) : ''
+    });
     setError(''); setShowModal(true);
   };
 
@@ -99,6 +110,30 @@ export default function Issues() {
     finally { setSaving(false); }
   };
 
+  const downloadCsv = async () => {
+    setDownloading(true);
+    try {
+      const params = {};
+      if (filters.project) params.project = filters.project;
+      if (filters.status) params.status = filters.status;
+      if (filters.severity) params.severity = filters.severity;
+      const blob = await api.download('/issues/export', params);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'issues.csv');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('CSV downloaded');
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const remove = async (id) => {
     if (!window.confirm('Delete this issue?')) return;
     await api.delete(`/issues/${id}`);
@@ -115,9 +150,14 @@ export default function Issues() {
           <h1 style={{ fontSize:22, fontWeight:700, color:'#1a202c' }}>Issues</h1>
           <p style={{ color:'#64748b', fontSize:13, marginTop:2 }}>{issues.length} total issues</p>
         </div>
-        <button onClick={openNew} style={{ background:'#378add', color:'#fff', border:'none', borderRadius:8, padding:'9px 18px', fontSize:13, fontWeight:500, display:'flex', alignItems:'center', gap:6 }}>
-          <i className="ti ti-plus" />Submit Issue
-        </button>
+        <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+          <button onClick={downloadCsv} disabled={downloading} style={{ background:'#fff', color:'#111827', border:'1px solid #e2e8f0', borderRadius:8, padding:'9px 18px', fontSize:13, display:'flex', alignItems:'center', gap:6 }}>
+            <i className="ti ti-download" />{downloading ? 'Exporting…' : 'Download CSV'}
+          </button>
+          <button onClick={openNew} style={{ background:'#378add', color:'#fff', border:'none', borderRadius:8, padding:'9px 18px', fontSize:13, fontWeight:500, display:'flex', alignItems:'center', gap:6 }}>
+            <i className="ti ti-plus" />Submit Issue
+          </button>
+        </div>
       </div>
 
       {/* Status pills */}
@@ -136,12 +176,16 @@ export default function Issues() {
           <i className="ti ti-search" style={{ color:'#94a3b8', fontSize:15 }} />
           <input value={filters.search} onChange={e=>setFilters(f=>({...f,search:e.target.value}))} placeholder="Search issues…" style={{ border:'none', outline:'none', fontSize:13, color:'#1a202c', width:'100%' }} />
         </div>
+        <select value={filters.project} onChange={e=>setFilters(f=>({...f,project:e.target.value}))} style={{ ...inputStyle, width:'auto', padding:'6px 12px' }}>
+          <option value="">All projects</option>
+          {projects.map(p=><option key={p._id} value={p._id}>{p.name}</option>)}
+        </select>
         <select value={filters.severity} onChange={e=>setFilters(f=>({...f,severity:e.target.value}))} style={{ ...inputStyle, width:'auto', padding:'6px 12px' }}>
           <option value="">All severities</option>
           {SEV_OPTS.map(s=><option key={s}>{s}</option>)}
         </select>
-        {(filters.status||filters.severity||filters.search) && (
-          <button onClick={()=>setFilters({status:'',severity:'',search:''})} style={{ padding:'6px 14px', border:'1px solid #e2e8f0', borderRadius:8, background:'none', fontSize:12, color:'#64748b' }}>Clear</button>
+        {(filters.status||filters.severity||filters.search||filters.project) && (
+          <button onClick={()=>setFilters({project:'',status:'',severity:'',search:''})} style={{ padding:'6px 14px', border:'1px solid #e2e8f0', borderRadius:8, background:'none', fontSize:12, color:'#64748b' }}>Clear</button>
         )}
       </div>
 
@@ -159,7 +203,7 @@ export default function Issues() {
           <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
             <thead>
               <tr style={{ background:'#f8fafc' }}>
-                {['Issue','Reporter','Created','Status','Assignee','Severity',''].map(h=>(
+                {['Issue','Reporter','Created','Status','Assignee','Severity','Due'].map(h=>(
                   <th key={h} style={{ padding:'10px 14px', textAlign:'left', color:'#64748b', fontSize:11, fontWeight:600, borderBottom:'1px solid #e2e8f0', whiteSpace:'nowrap', textTransform:'uppercase', letterSpacing:'0.04em' }}>{h}</th>
                 ))}
               </tr>
@@ -196,6 +240,7 @@ export default function Issues() {
                   <td style={{ padding:'12px 14px' }}>
                     <span style={{ color:SEV_COLORS[issue.severity]||'#999', fontSize:12, fontWeight:600 }}>{issue.severity}</span>
                   </td>
+                  <td style={{ padding:'12px 14px', color:'#64748b', fontSize:12 }}>{issue.dueDate ? new Date(issue.dueDate).toLocaleDateString() : '—'}</td>
                   <td style={{ padding:'12px 14px' }}>
                     <div style={{ display:'flex', gap:4 }}>
                       <button onClick={()=>openEdit(issue)} style={{ background:'none', border:'1px solid #e2e8f0', borderRadius:6, padding:'4px 8px', color:'#64748b', fontSize:13 }} title="Edit"><i className="ti ti-edit" /></button>
@@ -238,6 +283,9 @@ export default function Issues() {
               <select style={inputStyle} value={form.severity} onChange={e=>setForm({...form,severity:e.target.value})}>
                 {SEV_OPTS.map(s=><option key={s}>{s}</option>)}
               </select>
+            </Field>
+            <Field label="Due Date">
+              <input type="date" style={inputStyle} value={form.dueDate} onChange={e=>setForm({...form,dueDate:e.target.value})} />
             </Field>
           </div>
           <div style={{ display:'flex', justifyContent:'flex-end', gap:10, marginTop:20 }}>

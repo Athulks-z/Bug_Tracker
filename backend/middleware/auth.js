@@ -6,7 +6,10 @@ const auth = async (req, res, next) => {
   if (!token) return res.status(401).json({ message: 'No token' });
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = await User.findById(decoded.id).select('-password');
+    req.user = await User.findById(decoded.id)
+      .select('-password')
+      .populate('reportingManager', 'name email')
+      .populate('assignedProjects', 'name key');
     if (!req.user || !req.user.active) return res.status(401).json({ message: 'Unauthorized' });
     next();
   } catch {

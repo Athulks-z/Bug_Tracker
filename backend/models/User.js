@@ -6,6 +6,12 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true, lowercase: true },
   password: { type: String, required: true, minlength: 6 },
   role: { type: String, enum: ['admin', 'member'], default: 'member' },
+  jobTitle: { type: String, default: '' },
+  domain: { type: String, enum: ['Firmware', 'Hardware', 'Project Manager', 'Tester', 'Other'], default: 'Other' },
+  phone: { type: String, default: '' },
+  skills: { type: String, default: '' },
+  reportingManager: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  assignedProjects: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Project' }],
   avatar: { type: String, default: '' },
   active: { type: Boolean, default: true },
 }, { timestamps: true });

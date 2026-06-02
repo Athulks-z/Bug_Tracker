@@ -9,4 +9,10 @@ const projectSchema = new mongoose.Schema({
   status: { type: String, enum: ['active', 'archived'], default: 'active' },
 }, { timestamps: true });
 
+projectSchema.virtual('prefix').get(function() {
+  return this.key;
+});
+projectSchema.set('toJSON', { virtuals: true });
+projectSchema.set('toObject', { virtuals: true });
+
 module.exports = mongoose.model('Project', projectSchema);

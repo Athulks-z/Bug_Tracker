@@ -14,26 +14,47 @@ function Avatar({ name, size=36 }) {
 export default function AdminUsers() {
   const { user: me } = useAuth();
   const [users, setUsers] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editUser, setEditUser] = useState(null);
-  const [form, setForm] = useState({ name:'', email:'', password:'', role:'member', active:true });
+  const [form, setForm] = useState({ name:'', email:'', password:'', role:'member', domain:'Other', jobTitle:'', phone:'', skills:'', reportingManager:'', assignedProjects:[], active:true });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
 
-  const load = () => api.get('/users').then(setUsers).finally(()=>setLoading(false));
+  const load = () => {
+    setLoading(true);
+    Promise.all([api.get('/users'), api.get('/projects')])
+      .then(([u, p]) => {
+        setUsers(u);
+        setProjects(p);
+      })
+      .finally(()=>setLoading(false));
+  };
   useEffect(()=>{ load(); },[]);
 
   const openNew = () => {
     setEditUser(null);
-    setForm({ name:'', email:'', password:'', role:'member', active:true });
+    setForm({ name:'', email:'', password:'', role:'member', domain:'Other', jobTitle:'', phone:'', skills:'', reportingManager:'', assignedProjects:[], active:true });
     setError(''); setShowModal(true);
   };
 
   const openEdit = (u) => {
     setEditUser(u);
-    setForm({ name:u.name, email:u.email, password:'', role:u.role, active:u.active });
+    setForm({
+      name: u.name,
+      email: u.email,
+      password: '',
+      role: u.role,
+      domain: u.domain || 'Other',
+      jobTitle: u.jobTitle || '',
+      phone: u.phone || '',
+      skills: u.skills || '',
+      reportingManager: u.reportingManager?._id || u.reportingManager || '',
+      assignedProjects: (u.assignedProjects || []).map(p => p._id || p),
+      active: u.active
+    });
     setError(''); setShowModal(true);
   };
 
@@ -114,7 +135,7 @@ export default function AdminUsers() {
           <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
             <thead>
               <tr style={{ background:'#f8fafc' }}>
-                {['User','Email','Role','Status','Joined','Actions'].map(h=>(
+                {['User','Email','Role','Domain','Manager','Status','Joined','Actions'].map(h=>(
                   <th key={h} style={{ padding:'10px 16px', textAlign:'left', color:'#64748b', fontSize:11, fontWeight:600, borderBottom:'1px solid #e2e8f0', textTransform:'uppercase', letterSpacing:'0.04em' }}>{h}</th>
                 ))}
               </tr>
@@ -137,6 +158,8 @@ export default function AdminUsers() {
                       {u.role}
                     </span>
                   </td>
+                  <td style={{ padding:'12px 16px', color:'#475569', fontSize:12 }}>{u.domain || 'Other'}</td>
+                  <td style={{ padding:'12px 16px', color:'#475569', fontSize:12 }}>{u.reportingManager?.name || '—'}</td>
                   <td style={{ padding:'12px 16px' }}>
                     <span style={{ background: u.active ? '#1d9e7518' : '#e24b4a18', color: u.active ? '#1d9e75' : '#e24b4a', padding:'3px 10px', borderRadius:12, fontSize:12, fontWeight:500 }}>
                       {u.active ? 'Active' : 'Inactive'}
@@ -178,7 +201,7 @@ export default function AdminUsers() {
                 <label style={{ display:'block', fontSize:11, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 }}>Email *</label>
                 <input type="email" style={inputStyle} value={form.email} onChange={e=>setForm({...form,email:e.target.value})} placeholder="john@example.com" />
               </div>
-              <div>
+              <div style={{ gridColumn:'1/-1' }}>
                 <label style={{ display:'block', fontSize:11, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 }}>{editUser ? 'New Password (optional)' : 'Password *'}</label>
                 <input type="password" style={inputStyle} value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder="••••••••" />
               </div>
@@ -188,6 +211,53 @@ export default function AdminUsers() {
                   <option value="member">Member</option>
                   <option value="admin">Admin</option>
                 </select>
+              </div>
+              <div>
+                <label style={{ display:'block', fontSize:11, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 }}>Domain</label>
+                <select style={inputStyle} value={form.domain} onChange={e=>setForm({...form,domain:e.target.value})}>
+                  <option value="Firmware">Firmware</option>
+                  <option value="Hardware">Hardware</option>
+                  <option value="Project Manager">Project Manager</option>
+                  <option value="Tester">Tester</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ display:'block', fontSize:11, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 }}>Job Title</label>
+                <input style={inputStyle} value={form.jobTitle} onChange={e=>setForm({...form,jobTitle:e.target.value})} placeholder="e.g. QA Engineer" />
+              </div>
+              <div>
+                <label style={{ display:'block', fontSize:11, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 }}>Phone</label>
+                <input style={inputStyle} value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} placeholder="+1 555 0123" />
+              </div>
+              <div>
+                <label style={{ display:'block', fontSize:11, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 }}>Reporting Manager</label>
+                <select style={inputStyle} value={form.reportingManager} onChange={e=>setForm({...form,reportingManager:e.target.value})}>
+                  <option value="">None</option>
+                  {users.filter(u => u._id !== editUser?._id).map(u => <option key={u._id} value={u._id}>{u.name}</option>)}
+                </select>
+              </div>
+              <div style={{ gridColumn:'1/-1' }}>
+                <label style={{ display:'block', fontSize:11, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 }}>Skills</label>
+                <textarea style={{ ...inputStyle, minHeight:70, resize:'vertical' }} value={form.skills} onChange={e=>setForm({...form,skills:e.target.value})} placeholder="e.g. React, Embedded C, Test automation" />
+              </div>
+              <div style={{ gridColumn:'1/-1' }}>
+                <label style={{ display:'block', fontSize:11, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 }}>Assigned Projects</label>
+                <div style={{ border:'1px solid #e2e8f0', borderRadius:8, padding:10, maxHeight:180, overflowY:'auto' }}>
+                  {projects.map(project => (
+                    <label key={project._id} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8, cursor:'pointer' }}>
+                      <input type="checkbox" checked={form.assignedProjects.includes(project._id)} onChange={() => {
+                        setForm(f => ({
+                          ...f,
+                          assignedProjects: f.assignedProjects.includes(project._id)
+                            ? f.assignedProjects.filter(pid => pid !== project._id)
+                            : [...f.assignedProjects, project._id]
+                        }))
+                      }} />
+                      <span style={{ fontSize:13, color:'#334155' }}>{project.name} ({project.key})</span>
+                    </label>
+                  ))}
+                </div>
               </div>
               {editUser && (
                 <div>

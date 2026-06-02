@@ -48,6 +48,9 @@ try {
     console.log('Loading issues routes...');
     app.use('/api/issues', require('./routes/issues'));
 
+    console.log('Loading tasks routes...');
+    app.use('/api/tasks', require('./routes/tasks'));
+
     console.log('All routes loaded successfully.');
 } catch (err) {
     console.error('Route loading failed!');

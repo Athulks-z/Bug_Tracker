@@ -36,6 +36,7 @@ export default function Layout() {
           {[
             { to:'/', icon:'ti-layout-dashboard', label:'Dashboard' },
             { to:'/issues', icon:'ti-bug', label:'Issues' },
+            { to:'/tasks', icon:'ti-list-check', label:'Tasks' },
           ].map(item => (
             <NavLink key={item.to} to={item.to} end={item.to==='/'} style={({ isActive }) => navStyle(isActive)}>
               <i className={`ti ${item.icon}`} style={{ fontSize:16, flexShrink:0 }} />

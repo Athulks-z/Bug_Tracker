@@ -21,6 +21,7 @@ const issueSchema = new mongoose.Schema({
     enum: ['Showstopper', 'Major', 'Medium', 'Low', 'None'],
     default: 'Medium'
   },
+  dueDate: { type: Date },
   issueNumber: { type: Number },
   comments: [commentSchema],
 }, { timestamps: true });

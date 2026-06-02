@@ -8,11 +8,20 @@ const sign = (id) => jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '7d' 
 // POST /api/auth/register (first user becomes admin)
 router.post('/register', async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, jobTitle, domain, phone, skills } = req.body;
     if (!name || !email || !password) return res.status(400).json({ message: 'All fields required' });
     if (await User.findOne({ email })) return res.status(400).json({ message: 'Email already exists' });
     const count = await User.countDocuments();
-    const user = await User.create({ name, email, password, role: count === 0 ? 'admin' : 'member' });
+    const user = await User.create({
+      name,
+      email,
+      password,
+      role: count === 0 ? 'admin' : 'member',
+      jobTitle: jobTitle || '',
+      domain: domain || 'Other',
+      phone: phone || '',
+      skills: skills || ''
+    });
     res.status(201).json({ token: sign(user._id), user });
   } catch (err) {
     res.status(500).json({ message: err.message });

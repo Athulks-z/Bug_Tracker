@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Issues from './pages/Issues';
+import Tasks from './pages/Tasks';
 import AdminUsers from './pages/AdminUsers';
 import AdminProjects from './pages/AdminProjects';
 import Layout from './components/Layout';
@@ -33,6 +34,7 @@ export default function App() {
           <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
             <Route index element={<Dashboard />} />
             <Route path="issues" element={<Issues />} />
+            <Route path="tasks" element={<Tasks />} />
             <Route path="admin/users" element={<AdminRoute><AdminUsers /></AdminRoute>} />
             <Route path="admin/projects" element={<AdminRoute><AdminProjects /></AdminRoute>} />
           </Route>

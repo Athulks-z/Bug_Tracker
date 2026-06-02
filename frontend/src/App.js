@@ -8,6 +8,7 @@ import Issues from './pages/Issues';
 import Tasks from './pages/Tasks';
 import AdminUsers from './pages/AdminUsers';
 import AdminProjects from './pages/AdminProjects';
+import Profile from './pages/Profile';
 import Layout from './components/Layout';
 
 function PrivateRoute({ children }) {
@@ -35,6 +36,7 @@ export default function App() {
             <Route index element={<Dashboard />} />
             <Route path="issues" element={<Issues />} />
             <Route path="tasks" element={<Tasks />} />
+            <Route path="profile" element={<Profile />} />
             <Route path="admin/users" element={<AdminRoute><AdminUsers /></AdminRoute>} />
             <Route path="admin/projects" element={<AdminRoute><AdminProjects /></AdminRoute>} />
           </Route>

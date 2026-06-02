@@ -26,3 +26,15 @@ export function fmtDate(d) {
   if (!d) return '—'
   return new Date(d).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
 }
+
+
+// Add this to your existing utils.js
+export const priorityBadgeClass = (priority) => {
+  const classes = {
+    Critical: 'badge-critical',
+    High: 'badge-high',
+    Medium: 'badge-medium',
+    Low: 'badge-low'
+  };
+  return classes[priority] || 'badge-medium';
+};

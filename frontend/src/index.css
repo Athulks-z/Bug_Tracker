@@ -26,3 +26,7 @@ input, select, textarea { font-family: inherit; }
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+.badge-critical { background: #fef2f2; color: #dc2626; }
+.badge-high { background: #fff7ed; color: #ea580c; }
+.badge-medium { background: #eff6ff; color: #2563eb; }
+.badge-low { background: #f0fdf4; color: #16a34a; }

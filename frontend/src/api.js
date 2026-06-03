@@ -36,7 +36,7 @@ const req = async (method, path, body, params, responseType = 'json') => {
   return res.json();
 };
 
-export const api = {
+export default {
   get: (p, params) => req('GET', p, undefined, params),
   post: (p, b) => req('POST', p, b),
   put: (p, b) => req('PUT', p, b),

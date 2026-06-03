@@ -12,6 +12,8 @@ export default function Tasks() {
   const [tasks, setTasks] = useState([]);
   const [projects, setProjects] = useState([]);
   const [users, setUsers] = useState([]);
+  const [availableUsers, setAvailableUsers] = useState([]);
+  const [availableOnly, setAvailableOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editTask, setEditTask] = useState(null);
@@ -42,10 +44,20 @@ export default function Tasks() {
     }
   };
 
+  const loadAvailableUsers = async () => {
+    try {
+      const available = await api.get('/users', { available: true });
+      setAvailableUsers(available);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
     loadTasks();
     api.get('/projects').then(setProjects).catch(() => {});
     api.get('/users').then(setUsers).catch(() => {});
+    loadAvailableUsers();
   }, [user]);
 
   useEffect(() => {
@@ -92,7 +104,8 @@ export default function Tasks() {
       toast.success(editTask ? 'Task updated' : 'Task created');
       setShowModal(false);
       setEditTask(null);
-      loadTasks();
+      await loadTasks();
+      await loadAvailableUsers();
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -104,7 +117,8 @@ export default function Tasks() {
     if (!window.confirm('Delete this task?')) return;
     await api.delete(`/tasks/${id}`);
     toast.success('Task deleted');
-    loadTasks();
+    await loadTasks();
+    await loadAvailableUsers();
   };
 
   const isOverdue = (task) => {
@@ -157,6 +171,12 @@ export default function Tasks() {
           <option value="">All assignees</option>
           {users.map(u => <option key={u._id} value={u._id}>{u.name}</option>)}
         </select>
+      </div>
+      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+        <label style={{ display:'inline-flex', alignItems:'center', gap:6, color:'#475569', fontSize:13 }}>
+          <input type="checkbox" checked={availableOnly} onChange={e => setAvailableOnly(e.target.checked)} />
+          Show only available engineers
+        </label>
       </div>
 
       <div className="card" style={{ overflow:'hidden' }}>
@@ -223,8 +243,13 @@ export default function Tasks() {
                   <label className="form-label">Assignee</label>
                   <select className="form-control" value={form.assignee} onChange={e => setForm(f => ({ ...f, assignee: e.target.value }))}>
                     <option value="">Unassigned</option>
-                    {users.map(u => <option key={u._id} value={u._id}>{u.name}</option>)}
+                    {(availableOnly ? availableUsers : users).map(u => (
+                      <option key={u._id} value={u._id}>{u.name}</option>
+                    ))}
                   </select>
+                  <div style={{ marginTop:8, fontSize:12, color:'#64748b' }}>
+                    {availableOnly ? 'Showing engineers without active task assignments.' : 'Showing all engineers.'}
+                  </div>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Status</label>

@@ -4,17 +4,28 @@ const { auth, adminOnly } = require('../middleware/auth');
 
 router.get('/', auth, async (req, res) => {
   try {
-    const q = req.user.role === 'admin' ? {} : { members: req.user._id };
-    const projects = await Project.find(q).populate('owner', 'name email').populate('members', 'name email').sort({ createdAt: -1 });
+    const q = req.user.role === 'admin'
+      ? {}
+      : { $or: [{ members: req.user._id }, { owner: req.user._id }] };
+    const projects = await Project.find(q)
+      .populate('owner', 'name email')
+      .populate('members', 'name email')
+      .sort({ createdAt: -1 });
     res.json(projects);
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
 router.post('/', auth, async (req, res) => {
   try {
-    const { name, description, key, members } = req.body;
+    const { name, description, key, owner, members } = req.body;
     if (!name || !key) return res.status(400).json({ message: 'Name and key required' });
-    const project = await Project.create({ name, description, key: key.toUpperCase(), owner: req.user._id, members: members || [] });
+    const project = await Project.create({
+      name,
+      description,
+      key: key.toUpperCase(),
+      owner: owner || req.user._id,
+      members: members || []
+    });
     res.status(201).json(await project.populate(['owner', 'members']));
   } catch (err) { res.status(500).json({ message: err.message }); }
 });

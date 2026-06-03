@@ -13,25 +13,32 @@ export default function Projects() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editProject, setEditProject] = useState(null)
-  const [form, setForm] = useState({ name:'', description:'', prefix:'', color:'#378add', members:[] })
+  const [form, setForm] = useState({ name:'', description:'', key:'', color:'#378add', owner:'', members:[] });
 
   const fetchProjects = () => {
-    api.get('/projects').then(r => setProjects(r.data)).finally(() => setLoading(false))
+    api.get('/projects').then(r => setProjects(r)).finally(() => setLoading(false))
   }
 
   useEffect(() => {
     fetchProjects()
-    api.get('/users').then(r => setUsers(r.data))
+    api.get('/users').then(r => setUsers(r))
   }, [])
 
   const openNew = () => {
     setEditProject(null)
-    setForm({ name:'', description:'', prefix:'', color:'#378add', members:[] })
+    setForm({ name:'', description:'', key:'', color:'#378add', owner:'', members:[] })
     setShowModal(true)
   }
   const openEdit = (p) => {
     setEditProject(p)
-    setForm({ name:p.name, description:p.description||'', prefix:p.prefix, color:p.color||'#378add', members:p.members.map(m=>m._id||m) })
+    setForm({
+      name:p.name,
+      description:p.description||'',
+      key:p.key || p.prefix || '',
+      color:p.color||'#378add',
+      owner:p.owner?._id || p.owner || '',
+      members:p.members.map(m=>m._id||m)
+    })
     setShowModal(true)
   }
 
@@ -78,10 +85,11 @@ export default function Projects() {
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(300px, 1fr))', gap:16 }}>
         {projects.map(p => (
           <div key={p._id} className="card" style={{ position:'relative', borderTop:`3px solid ${p.color||'#378add'}` }}>
-            <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:10 }}>
+            <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:10, gap:12 }}>
               <div>
                 <div style={{ fontWeight:600, fontSize:15 }}>{p.name}</div>
-                <div style={{ fontSize:11, color:'#9ca3af', fontFamily:'monospace', marginTop:2 }}>{p.prefix}</div>
+                <div style={{ fontSize:11, color:'#9ca3af', fontFamily:'monospace', marginTop:2 }}>{p.key || p.prefix}</div>
+                <div style={{ fontSize:12, color:'#475569', marginTop:8 }}>Owner: {p.owner?.name || 'Unassigned'}</div>
               </div>
               <div style={{ display:'flex', gap:4 }}>
                 <button className="btn-icon" onClick={()=>openEdit(p)} title="Edit"><i className="ti ti-edit" style={{ fontSize:15 }} /></button>
@@ -130,9 +138,9 @@ export default function Projects() {
                 </div>
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
                   <div className="form-group">
-                    <label className="form-label">Prefix *</label>
-                    <input className="form-control" required maxLength={5} value={form.prefix}
-                      onChange={e=>setForm(f=>({...f,prefix:e.target.value.toUpperCase()}))}
+                    <label className="form-label">Project Key *</label>
+                    <input className="form-control" required maxLength={5} value={form.key}
+                      onChange={e=>setForm(f=>({...f,key:e.target.value.toUpperCase()}))}
                       placeholder="e.g. PR" style={{ fontFamily:'monospace' }} />
                   </div>
                   <div className="form-group">
@@ -144,6 +152,13 @@ export default function Projects() {
                       ))}
                     </div>
                   </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Project Owner *</label>
+                  <select className="form-control" required value={form.owner} onChange={e=>setForm(f=>({...f,owner:e.target.value}))}>
+                    <option value="">Select owner</option>
+                    {users.map(u => <option key={u._id} value={u._id}>{u.name}</option>)}
+                  </select>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Team Members</label>

@@ -110,8 +110,22 @@ export default function Profile() {
             <div style={{ fontSize:12, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:16 }}>Edit profile</div>
             <div style={{ display:'grid', gap:16 }}>
               <div className="form-group">
-                <label className="form-label">Avatar URL</label>
-                <input className="form-control" value={profile.avatar || ''} onChange={e => onChange({ avatar: e.target.value })} placeholder="Paste image URL" />
+                <label className="form-label">Profile picture</label>
+                <input
+                  className="form-control"
+                  type="file"
+                  accept="image/*"
+                  onChange={e => {
+                    const file = e.target.files?.[0]
+                    if (!file) return
+                    const reader = new FileReader()
+                    reader.onload = () => onChange({ avatar: reader.result })
+                    reader.readAsDataURL(file)
+                  }}
+                />
+                <div style={{ marginTop:8, fontSize:12, color:'#64748b' }}>
+                  Upload an image file and it will be stored as your profile avatar.
+                </div>
               </div>
               <div className="form-group">
                 <label className="form-label">Name</label>

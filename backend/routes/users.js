@@ -1,11 +1,27 @@
 const router = require('express').Router();
 const User = require('../models/User');
+const Task = require('../models/Task');
 const { auth, adminOnly } = require('../middleware/auth');
 
 // GET /api/users — all users (auth required)
 router.get('/', auth, async (req, res) => {
   try {
-    const users = await User.find()
+    const { available, search, role } = req.query;
+    const q = {};
+    if (search) {
+      q.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } }
+      ];
+    }
+    if (role) q.role = role;
+    if (available === 'true') {
+      const busyTasks = await Task.find({ assignee: { $ne: null }, status: { $ne: 'Completed' } }).select('assignee');
+      const busyIds = busyTasks.map(t => t.assignee.toString());
+      q._id = { $nin: busyIds };
+    }
+
+    const users = await User.find(q)
       .select('-password')
       .populate('reportingManager', 'name email')
       .populate('assignedProjects', 'name key')

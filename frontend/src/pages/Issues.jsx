@@ -4,8 +4,8 @@ import { statusBadgeClass, severityBadgeClass, fmtDate, avatarColor, initials } 
 import toast from 'react-hot-toast'
 import IssueModal from '../components/IssueModal'
 
-const STATUSES = ['Open','To do','In progress','Reopen','Closed']
-const SEVERITIES = ['Showstopper','Major','Medium','Low','None']
+const STATUSES = ['Open','Triaged','Assigned','In Progress','Code Review','QA Testing','Resolved','Closed','Reopened']
+const SEVERITIES = ['Showstopper','Critical','Major','Medium','Low','None']
 
 export default function Issues() {
   const [issues, setIssues] = useState([])
@@ -24,16 +24,16 @@ export default function Issues() {
       if (filters.status) params.status = filters.status
       if (filters.severity) params.severity = filters.severity
       if (filters.search) params.search = filters.search
-      const r = await api.get('/issues', { params })
-      setIssues(r.data)
+      const r = await api.get('/issues', params)
+      setIssues(r)
     } finally { setLoading(false) }
   }, [filters])
 
   useEffect(() => { fetchIssues() }, [fetchIssues])
 
   useEffect(() => {
-    api.get('/projects').then(r => setProjects(r.data))
-    api.get('/users').then(r => setUsers(r.data))
+    api.get('/projects').then(setProjects).catch(()=>{})
+    api.get('/users').then(setUsers).catch(()=>{})
   }, [])
 
   const deleteIssue = async (id) => {

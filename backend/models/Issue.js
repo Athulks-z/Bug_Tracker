@@ -5,6 +5,27 @@ const commentSchema = new mongoose.Schema({
   text: { type: String, required: true },
 }, { timestamps: true });
 
+const timeLogSchema = new mongoose.Schema({
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  hours: { type: Number, required: true },
+  note: { type: String, default: '' },
+  date: { type: Date, default: Date.now }
+}, { _id: false });
+
+const attachmentSchema = new mongoose.Schema({
+  filename: String,
+  path: String,
+  uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  createdAt: { type: Date, default: Date.now }
+}, { _id: false });
+
+const activitySchema = new mongoose.Schema({
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  action: String,
+  details: String,
+  createdAt: { type: Date, default: Date.now }
+}, { _id: false });
+
 const issueSchema = new mongoose.Schema({
   title: { type: String, required: true, trim: true },
   description: { type: String, default: '' },
@@ -13,17 +34,27 @@ const issueSchema = new mongoose.Schema({
   assignee: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   status: {
     type: String,
-    enum: ['Open', 'To do', 'In progress', 'Reopen', 'Closed'],
+    enum: ['Open','Triaged','Assigned','In Progress','Code Review','QA Testing','Resolved','Closed','Reopened'],
     default: 'Open'
   },
   severity: {
     type: String,
-    enum: ['Showstopper', 'Major', 'Medium', 'Low', 'None'],
+    enum: ['Showstopper','Critical','Major','Medium','Low','None'],
     default: 'Medium'
   },
   dueDate: { type: Date },
   issueNumber: { type: Number },
+  foundInVersion: { type: String, default: '' },
+  fixedInVersion: { type: String, default: '' },
+  targetRelease: { type: String, default: '' },
+  sprint: { type: String, default: '' },
+  estimatedHours: { type: Number, default: 0 },
+  timeLogs: [timeLogSchema],
+  attachments: [attachmentSchema],
   comments: [commentSchema],
+  activity: [activitySchema],
+  reopenedCount: { type: Number, default: 0 },
+  resolvedAt: { type: Date },
 }, { timestamps: true });
 
 issueSchema.pre('save', async function(next) {

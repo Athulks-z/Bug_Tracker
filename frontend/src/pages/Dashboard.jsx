@@ -15,13 +15,18 @@ export default function Dashboard() {
 
   useEffect(() => {
     Promise.all([
-      api.get('/issues/stats/summary'),
+      api.get('/issues/stats/overview'),
       api.get('/issues?limit=8'),
       api.get('/projects'),
-    ]).then(([s, i, p]) => {
-      setStats(s.data)
-      setRecent(i.data.slice(0, 8))
-      setProjects(p.data.slice(0, 4))
+    ]).then(([ov, i, p]) => {
+      // map overview into small stats shape for compatibility
+      const s = []
+      s.push({ _id: 'Open', count: ov.open })
+      s.push({ _id: 'In progress', count: ov['In Progress'] || ov.inProgress || ov.open })
+      s.push({ _id: 'Closed', count: ov.closed })
+      setStats(s)
+      setRecent(i.slice ? i.slice(0, 8) : (i.data || []).slice(0,8))
+      setProjects(p.slice ? p.slice(0,4) : (p.data || []).slice(0,4))
     }).finally(() => setLoading(false))
   }, [])
 

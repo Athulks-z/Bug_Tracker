@@ -17,6 +17,8 @@ console.log('=================================');
 
 const app = express();
 
+const path = require('path');
+
 // Middleware
 app.use(cors({
     origin: process.env.CLIENT_URL || '*',
@@ -24,6 +26,9 @@ app.use(cors({
 }));
 
 app.use(express.json());
+
+// serve uploaded files
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Health Check
 app.get('/api/health', (req, res) => {
@@ -48,8 +53,18 @@ try {
     console.log('Loading issues routes...');
     app.use('/api/issues', require('./routes/issues'));
 
+    console.log('Loading templates routes...');
+    app.use('/api/templates', require('./routes/templates'));
+
     console.log('Loading tasks routes...');
     app.use('/api/tasks', require('./routes/tasks'));
+    console.log('Loading notifications routes...');
+    app.use('/api/notifications', require('./routes/notifications'));
+    console.log('Loading sprints routes...');
+    app.use('/api/sprints', require('./routes/sprints'));
+
+    console.log('Loading releases routes...');
+    app.use('/api/releases', require('./routes/releases'));
 
     console.log('All routes loaded successfully.');
 } catch (err) {

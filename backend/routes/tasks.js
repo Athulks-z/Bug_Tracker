@@ -46,6 +46,60 @@ router.get('/stats/summary', auth, async (req, res) => {
   }
 });
 
+router.get('/export', auth, async (req, res) => {
+  try {
+    const { project, status, assignee, overdue } = req.query;
+    const q = {};
+    if (project) q.project = project;
+    if (status) q.status = status;
+    if (assignee) q.assignee = assignee === 'me' ? req.user._id : assignee;
+    if (overdue === 'true') {
+      q.endDate = { $lt: new Date() };
+      q.status = { $ne: 'Completed' };
+    }
+
+    const tasks = await Task.find(q)
+      .populate('reporter', 'name email')
+      .populate('assignee', 'name email')
+      .populate('project', 'name key')
+      .sort({ createdAt: -1 });
+
+    const escape = (value) => {
+      const str = value == null ? '' : String(value);
+      return `"${str.replace(/"/g, '""')}"`;
+    };
+
+    const fields = [
+      'Task ID', 'Title', 'Description', 'Project', 'Project Key', 'Reporter', 'Reporter Email', 'Assignee', 'Assignee Email', 'Status', 'Priority', 'Start Date', 'End Date', 'Created At', 'Updated At'
+    ];
+
+    const rows = tasks.map(task => [
+      task._id,
+      task.title,
+      task.description,
+      task.project?.name,
+      task.project?.key,
+      task.reporter?.name,
+      task.reporter?.email,
+      task.assignee?.name,
+      task.assignee?.email,
+      task.status,
+      task.priority,
+      task.startDate ? task.startDate.toISOString().slice(0, 10) : '',
+      task.endDate ? task.endDate.toISOString().slice(0, 10) : '',
+      task.createdAt ? task.createdAt.toISOString() : '',
+      task.updatedAt ? task.updatedAt.toISOString() : ''
+    ]);
+
+    const csv = [fields.map(escape).join(','), ...rows.map(row => row.map(escape).join(','))].join('\r\n');
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="tasks.csv"');
+    res.send(csv);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 router.post('/', auth, async (req, res) => {
   try {
     const { title, description, project, assignee, status, priority, startDate, endDate } = req.body;

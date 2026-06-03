@@ -45,4 +45,34 @@ router.post('/login', async (req, res) => {
 // GET /api/auth/me
 router.get('/me', auth, (req, res) => res.json(req.user));
 
+// PUT /api/auth/me
+router.put('/me', auth, async (req, res) => {
+  try {
+    const { name, email, phone, jobTitle, domain, skills, reportingManager, assignedProjects, avatar, password } = req.body;
+    const update = {
+      name,
+      email,
+      phone,
+      jobTitle,
+      domain,
+      skills,
+      reportingManager,
+      assignedProjects,
+      avatar
+    };
+    if (password) {
+      const bcrypt = require('bcryptjs');
+      update.password = await bcrypt.hash(password, 10);
+    }
+    const user = await User.findByIdAndUpdate(req.user._id, update, { new: true })
+      .select('-password')
+      .populate('reportingManager', 'name email')
+      .populate('assignedProjects', 'name key');
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 module.exports = router;

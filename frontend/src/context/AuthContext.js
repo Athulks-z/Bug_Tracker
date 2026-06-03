@@ -28,12 +28,24 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
+  const updateProfile = async (payload) => {
+    const user = await api.put('/auth/me', payload);
+    setUser(user);
+    return user;
+  };
+
+  const refreshUser = async () => {
+    const user = await api.get('/auth/me');
+    setUser(user);
+    return user;
+  };
+
   const logout = () => {
     localStorage.removeItem('bt_token');
     setUser(null);
   };
 
-  return <AuthContext.Provider value={{ user, login, register, logout, loading }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, login, register, updateProfile, refreshUser, logout, loading }}>{children}</AuthContext.Provider>;
 }
 
 export const useAuth = () => useContext(AuthContext);

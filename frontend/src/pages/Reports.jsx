@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import api from '../api'
+import { api } from '../api'
 import { statusBadgeClass, severityBadgeClass, avatarColor, initials } from '../utils'
 
 const SEV_ORDER = ['Showstopper','Major','Medium','Low','None']

@@ -2,6 +2,7 @@ const router = require('express').Router();
 const User = require('../models/User');
 const Task = require('../models/Task');
 const { auth, adminOnly } = require('../middleware/auth');
+const { isStrongPassword } = require('../utils/passwordPolicy');
 
 // GET /api/users — all users (auth required)
 router.get('/', auth, async (req, res) => {
@@ -35,6 +36,7 @@ router.post('/', auth, adminOnly, async (req, res) => {
   try {
     const { name, email, password, role, jobTitle, domain, phone, skills, reportingManager, assignedProjects } = req.body;
     if (!name || !email || !password) return res.status(400).json({ message: 'All fields required' });
+    if (!isStrongPassword(password)) return res.status(400).json({ message: 'Password must be at least 10 characters and include uppercase and lowercase letters and a number' });
     if (await User.findOne({ email })) return res.status(400).json({ message: 'Email already exists' });
     const user = await User.create({
       name,
@@ -60,6 +62,7 @@ router.post('/', auth, adminOnly, async (req, res) => {
 router.put('/:id', auth, adminOnly, async (req, res) => {
   try {
     const { name, email, role, active, password, jobTitle, domain, phone, skills, reportingManager, assignedProjects } = req.body;
+    if (password && !isStrongPassword(password)) return res.status(400).json({ message: 'Password must be at least 10 characters and include uppercase and lowercase letters and a number' });
     const update = { name, email, role, active, jobTitle, domain, phone, skills, reportingManager, assignedProjects };
     if (password) {
       const bcrypt = require('bcryptjs');

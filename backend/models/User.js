@@ -1,10 +1,19 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const { isStrongPassword } = require('../utils/passwordPolicy');
 
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   email: { type: String, required: true, unique: true, lowercase: true },
-  password: { type: String, required: true, minlength: 6 },
+  password: {
+    type: String,
+    required: true,
+    minlength: 10,
+    validate: {
+      validator: isStrongPassword,
+      message: 'Password must include uppercase and lowercase letters and a number'
+    }
+  },
   role: { type: String, enum: ['admin', 'member'], default: 'member' },
   jobTitle: { type: String, default: '' },
   domain: { type: String, enum: ['Firmware', 'Hardware', 'Project Manager', 'Tester', 'Other'], default: 'Other' },
@@ -14,7 +23,13 @@ const userSchema = new mongoose.Schema({
   assignedProjects: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Project' }],
   avatar: { type: String, default: '' },
   active: { type: Boolean, default: true },
+  bootstrapAdmin: { type: Boolean, select: false },
 }, { timestamps: true });
+
+userSchema.index(
+  { bootstrapAdmin: 1 },
+  { unique: true, partialFilterExpression: { bootstrapAdmin: true } }
+);
 
 userSchema.pre('save', async function(next) {
   if (!this.isModified('password')) return next();
@@ -29,6 +44,7 @@ userSchema.methods.comparePassword = function(password) {
 userSchema.methods.toJSON = function() {
   const obj = this.toObject();
   delete obj.password;
+  delete obj.bootstrapAdmin;
   return obj;
 };
 

@@ -31,12 +31,14 @@ export default function Register() {
         </div>
         <form onSubmit={submit} style={{ background:'#161f30', borderRadius:12, padding:28, border:'1px solid rgba(255,255,255,0.08)' }}>
           {error && <div style={{ background:'rgba(226,75,74,0.15)', border:'1px solid rgba(226,75,74,0.3)', color:'#f87171', padding:'10px 14px', borderRadius:8, marginBottom:16, fontSize:13 }}>{error}</div>}
-          {[['name','Name','Your full name','text'],['email','Email','you@example.com','email'],['password','Password','••••••••','password']].map(([k,l,ph,t])=>(
+          {[['name','Name','Your full name','text'],['email','Email','you@example.com','email'],['password','Password','At least 10 characters','password']].map(([k,l,ph,t])=>(
             <div key={k} style={{ marginBottom:16 }}>
               <label style={{ display:'block', color:'rgba(255,255,255,0.6)', fontSize:12, marginBottom:6, textTransform:'uppercase', letterSpacing:'0.06em' }}>{l}</label>
               <input type={t} value={form[k]} onChange={e=>setForm({...form,[k]:e.target.value})} required
+                {...(k === 'password' ? { minLength: 10 } : {})}
                 style={{ width:'100%', padding:'10px 12px', background:'#0f1724', border:'1px solid rgba(255,255,255,0.1)', borderRadius:8, color:'#fff', fontSize:14, outline:'none' }}
                 placeholder={ph} />
+              {k === 'password' && <span style={{ display:'block', marginTop:5, color:'rgba(255,255,255,0.5)', fontSize:11 }}>Include uppercase and lowercase letters and a number.</span>}
             </div>
           ))}
           <button type="submit" disabled={loading} style={{ width:'100%', padding:'11px', background:'#378add', border:'none', borderRadius:8, color:'#fff', fontSize:14, fontWeight:500, marginTop:8, opacity: loading ? 0.7 : 1 }}>

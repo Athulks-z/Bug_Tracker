@@ -6,8 +6,13 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [registrationEnabled, setRegistrationEnabled] = useState(false);
 
   useEffect(() => {
+    api.get('/auth/config')
+      .then(config => setRegistrationEnabled(config.allowSelfRegistration === true))
+      .catch(() => setRegistrationEnabled(false));
+
     const token = localStorage.getItem('bt_token');
     if (token) {
       api.get('/auth/me').then(u => setUser(u)).catch(() => localStorage.removeItem('bt_token')).finally(() => setLoading(false));
@@ -45,7 +50,7 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
-  return <AuthContext.Provider value={{ user, login, register, updateProfile, refreshUser, logout, loading }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, login, register, updateProfile, refreshUser, logout, loading, registrationEnabled }}>{children}</AuthContext.Provider>;
 }
 
 export const useAuth = () => useContext(AuthContext);

@@ -6,7 +6,7 @@ export default function Login() {
   const [form, setForm] = useState({ email:'', password:'' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, registrationEnabled } = useAuth();
   const navigate = useNavigate();
 
   const submit = async (e) => {
@@ -48,9 +48,11 @@ export default function Login() {
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
-        <p style={{ textAlign:'center', marginTop:16, color:'rgba(255,255,255,0.4)', fontSize:13 }}>
-          Don't have an account? <Link to="/register" style={{ color:'#378add' }}>Register</Link>
-        </p>
+        {registrationEnabled && (
+          <p style={{ textAlign:'center', marginTop:16, color:'rgba(255,255,255,0.4)', fontSize:13 }}>
+            Don't have an account? <Link to="/register" style={{ color:'#378add' }}>Register</Link>
+          </p>
+        )}
       </div>
     </div>
   );

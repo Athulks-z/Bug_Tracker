@@ -2,6 +2,12 @@ const router = require('express').Router();
 const fs = require('fs');
 const path = require('path');
 const { auth } = require('../middleware/auth');
+const {
+  canReadProject,
+  canCreateWorkItem,
+  canUpdateWorkItem,
+  canManageProject
+} = require('../middleware/roles');
 const notify = require('../utils/notify');
 const { store, hydrateIssue } = require('../services/data');
 
@@ -15,9 +21,15 @@ const matchesIssue = (issue, filters, userId) => (!filters.project || issue.proj
   && (!filters.reporter || issue.reporter === (filters.reporter === 'me' ? userId : filters.reporter))
   && (!filters.search || String(issue.title || '').toLowerCase().includes(String(filters.search).toLowerCase()));
 
+async function loadVisibleIssues(user) {
+  const [issues, projects] = await Promise.all([store.list('issues'), store.list('projects')]);
+  const visibleProjectIds = new Set(projects.filter((project) => canReadProject(user, project)).map((project) => project._id));
+  return issues.filter((issue) => visibleProjectIds.has(issue.project));
+}
+
 router.get('/', auth, async (req, res) => {
   try {
-    let issues = (await store.list('issues'))
+    let issues = (await loadVisibleIssues(req.user))
       .filter((issue) => matchesIssue(issue, req.query, req.user._id))
       .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     if (req.query.limit) issues = issues.slice(0, Math.max(0, parseInt(req.query.limit, 10) || 0));
@@ -29,7 +41,7 @@ router.get('/', auth, async (req, res) => {
 
 router.get('/stats/summary', auth, async (req, res) => {
   try {
-    const counts = (await store.list('issues')).reduce((result, issue) => {
+    const counts = (await loadVisibleIssues(req.user)).reduce((result, issue) => {
       result[issue.status] = (result[issue.status] || 0) + 1;
       return result;
     }, {});
@@ -41,7 +53,7 @@ router.get('/stats/summary', auth, async (req, res) => {
 
 router.get('/stats/overview', auth, async (req, res) => {
   try {
-    const issues = await store.list('issues');
+    const issues = await loadVisibleIssues(req.user);
     const total = issues.length;
     const open = issues.filter((issue) => ['Open', 'Triaged', 'Assigned', 'In Progress'].includes(issue.status)).length;
     const resolved = issues.filter((issue) => issue.status === 'Resolved').length;
@@ -92,7 +104,7 @@ router.get('/search', auth, async (req, res) => {
       if (field) filter[field] = match[2];
     });
     if (textParts.length) filter.search = textParts.join(' ');
-    const issues = (await store.list('issues'))
+    const issues = (await loadVisibleIssues(req.user))
       .filter((issue) => matchesIssue(issue, filter, req.user._id))
       .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     res.json(await Promise.all(issues.map(hydrateIssue)));
@@ -103,7 +115,7 @@ router.get('/search', auth, async (req, res) => {
 
 router.get('/export', auth, async (req, res) => {
   try {
-    const issues = (await store.list('issues'))
+    const issues = (await loadVisibleIssues(req.user))
       .filter((issue) => !req.query.project || issue.project === req.query.project)
       .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     const populated = await Promise.all(issues.map(hydrateIssue));
@@ -127,6 +139,24 @@ router.post('/', auth, async (req, res) => {
   try {
     const { title, description, project, assignee, status, severity } = req.body || {};
     if (!title || !project) return res.status(400).json({ message: 'Title and project required' });
+    const projectRecord = await store.findById('projects', project);
+    if (!canCreateWorkItem(req.user, projectRecord)) {
+      return res.status(403).json({ message: 'You cannot create issues in this project' });
+    }
+    if (req.user.role === 'trainee') {
+      return res.status(403).json({ message: 'Your role is read-only' });
+    }
+    if (req.user.role === 'employee' && assignee && assignee !== req.user._id) {
+      return res.status(403).json({ message: 'Employees cannot assign issues to other users' });
+    }
+    if (assignee && !['employee'].includes(req.user.role)) {
+      const assigneeRecord = await store.findById('users', assignee);
+      if (!assigneeRecord
+        || (projectRecord.owner !== assignee
+          && !(projectRecord.members || []).map(String).includes(String(assignee)))) {
+        return res.status(400).json({ message: 'The assignee must be a member of this project' });
+      }
+    }
     const issue = await store.insert('issues', {
       title,
       description: description || '',
@@ -152,10 +182,36 @@ router.put('/:id', auth, async (req, res) => {
   try {
     const issue = await store.findById('issues', req.params.id);
     if (!issue) return res.status(404).json({ message: 'Not found' });
+    const project = await store.findById('projects', issue.project);
+    if (!canUpdateWorkItem(req.user, issue, project)) {
+      return res.status(403).json({ message: 'You cannot update this issue' });
+    }
     const before = { status: issue.status, assignee: issue.assignee || null };
     const update = {};
-    ['title', 'description', 'project', 'assignee', 'status', 'severity', 'dueDate', 'foundInVersion', 'fixedInVersion', 'targetRelease', 'sprint', 'estimatedHours']
+    const employeeFields = ['title', 'description', 'status', 'severity', 'dueDate', 'timeLog'];
+    const managerFields = ['title', 'description', 'project', 'assignee', 'status', 'severity', 'dueDate', 'foundInVersion', 'fixedInVersion', 'targetRelease', 'sprint', 'estimatedHours', 'timeLog'];
+    const allowedFields = req.user.role === 'employee' ? employeeFields : managerFields;
+    if (Object.keys(req.body || {}).some((field) => !allowedFields.includes(field))) {
+      return res.status(403).json({ message: 'This role cannot change one or more requested issue fields' });
+    }
+    allowedFields.filter((field) => field !== 'timeLog')
       .forEach((field) => { if (req.body?.[field] !== undefined) update[field] = req.body[field]; });
+    if (update.project !== undefined) {
+      const targetProject = await store.findById('projects', update.project);
+      if (!canReadProject(req.user, targetProject)) {
+        return res.status(403).json({ message: 'You cannot move an issue to that project' });
+      }
+    }
+    if (update.assignee) {
+      const targetProjectId = update.project || issue.project;
+      const assigneeRecord = await store.findById('users', update.assignee);
+      const targetProject = update.project ? await store.findById('projects', targetProjectId) : project;
+      if (!assigneeRecord
+        || (targetProject?.owner !== update.assignee
+          && !(targetProject?.members || []).map(String).includes(String(update.assignee)))) {
+        return res.status(400).json({ message: 'The assignee must be a member of this project' });
+      }
+    }
     update.activity = issue.activity || [];
     update.timeLogs = issue.timeLogs || [];
     if (req.body?.status && req.body.status !== before.status) {
@@ -187,6 +243,10 @@ router.post('/:id/attachments', auth, async (req, res) => {
   try {
     const issue = await store.findById('issues', req.params.id);
     if (!issue) return res.status(404).json({ message: 'Not found' });
+    const project = await store.findById('projects', issue.project);
+    if (!canManageProject(req.user, project)) {
+      return res.status(403).json({ message: 'Only administrators and project managers can add attachments' });
+    }
     const { filename, data } = req.body || {};
     if (!filename || !data) return res.status(400).json({ message: 'filename and data required' });
     const matches = data.match(/^data:(.+);base64,(.+)$/);
@@ -205,6 +265,12 @@ router.post('/:id/attachments', auth, async (req, res) => {
 
 router.delete('/:id', auth, async (req, res) => {
   try {
+    const issue = await store.findById('issues', req.params.id);
+    if (!issue) return res.status(404).json({ message: 'Not found' });
+    const project = await store.findById('projects', issue.project);
+    if (!canManageProject(req.user, project)) {
+      return res.status(403).json({ message: 'Only administrators and project managers can delete issues' });
+    }
     await store.remove('issues', req.params.id);
     res.json({ message: 'Deleted' });
   } catch (err) {
@@ -216,6 +282,10 @@ router.post('/:id/comments', auth, async (req, res) => {
   try {
     const issue = await store.findById('issues', req.params.id);
     if (!issue) return res.status(404).json({ message: 'Not found' });
+    const project = await store.findById('projects', issue.project);
+    if (!canReadProject(req.user, project) || req.user.role === 'trainee') {
+      return res.status(403).json({ message: 'You cannot comment on this issue' });
+    }
     if (typeof req.body?.text !== 'string' || !req.body.text.trim()) {
       return res.status(400).json({ message: 'Comment text required' });
     }

@@ -93,7 +93,7 @@ export default function Projects() {
               </div>
               <div style={{ display:'flex', gap:4 }}>
                 <button className="btn-icon" onClick={()=>openEdit(p)} title="Edit"><i className="ti ti-edit" style={{ fontSize:15 }} /></button>
-                {user?.role==='admin' && <button className="btn-icon" style={{ color:'#ef4444' }} onClick={()=>deleteProject(p._id)}><i className="ti ti-trash" style={{ fontSize:15 }} /></button>}
+                {['super_admin','admin'].includes(user?.role) && <button className="btn-icon" style={{ color:'#ef4444' }} onClick={()=>deleteProject(p._id)}><i className="ti ti-trash" style={{ fontSize:15 }} /></button>}
               </div>
             </div>
             {p.description && <p style={{ fontSize:13, color:'#6b7280', marginBottom:12, lineHeight:1.5 }}>{p.description}</p>}

@@ -40,7 +40,7 @@ export default function Sidebar() {
             {n.label}
           </NavLink>
         ))}
-        {user?.role === 'admin' && (
+        {['super_admin', 'admin'].includes(user?.role) && (
           <>
             <div style={{ padding:'14px 16px 6px', fontSize:10, color:'rgba(255,255,255,0.25)', letterSpacing:'0.08em', textTransform:'uppercase' }}>Admin</div>
             <NavLink to="/admin/users" style={({ isActive }) => ({
@@ -51,6 +51,20 @@ export default function Sidebar() {
             })}>
               <i className="ti ti-users" style={{ fontSize:16 }} />
               User Management
+            </NavLink>
+          </>
+        )}
+        {user?.role === 'manager' && (
+          <>
+            <div style={{ padding:'14px 16px 6px', fontSize:10, color:'rgba(255,255,255,0.25)', letterSpacing:'0.08em', textTransform:'uppercase' }}>Management</div>
+            <NavLink to="/admin/projects" style={({ isActive }) => ({
+              display:'flex', alignItems:'center', gap:10, padding:'9px 16px',
+              color: isActive ? '#fff' : 'rgba(255,255,255,0.5)',
+              background: isActive ? 'rgba(255,255,255,0.1)' : 'transparent',
+              fontSize:13, transition:'all 0.15s', textDecoration:'none',
+            })}>
+              <i className="ti ti-users" style={{ fontSize:16 }} />
+              Project Members
             </NavLink>
           </>
         )}

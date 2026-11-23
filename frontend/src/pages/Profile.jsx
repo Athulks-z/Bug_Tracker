@@ -14,15 +14,11 @@ function Avatar({ url, name }) {
 export default function Profile() {
   const { user, updateProfile } = useAuth()
   const [profile, setProfile] = useState(null)
-  const [projects, setProjects] = useState([])
-  const [users, setUsers] = useState([])
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (!user) return
     api.get('/auth/me').then(setProfile).catch(() => setProfile(user))
-    api.get('/projects').then(setProjects).catch(() => {})
-    api.get('/users').then(setUsers).catch(() => {})
   }, [user])
 
   const onChange = (patch) => setProfile(p => ({ ...p, ...patch }))
@@ -42,9 +38,7 @@ export default function Profile() {
         jobTitle: profile.jobTitle,
         domain: profile.domain,
         skills: profile.skills,
-        avatar: profile.avatar,
-        reportingManager: profile.reportingManager?._id || profile.reportingManager || '',
-        assignedProjects: (profile.assignedProjects || []).map(p => p._id || p)
+        avatar: profile.avatar
       }
       await updateProfile(payload)
       toast.success('Profile updated')
@@ -61,7 +55,7 @@ export default function Profile() {
     <div style={{ padding:28 }}>
       <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:24 }}>
         <h1 style={{ fontSize:26, fontWeight:700, color:'#111827' }}>My profile</h1>
-        <p style={{ fontSize:14, color:'#64748b', maxWidth:720 }}>Manage your personal resume details, team assignments, and project access from one modern profile dashboard.</p>
+        <p style={{ fontSize:14, color:'#64748b', maxWidth:720 }}>Manage your personal contact and profile details. Reporting relationships and project access are managed by administrators and project managers.</p>
       </div>
 
       <div style={{ display:'grid', gridTemplateColumns:'320px 1fr', gap:24, alignItems:'start' }}>
@@ -156,27 +150,6 @@ export default function Profile() {
               <div className="form-group">
                 <label className="form-label">Professional summary / skills</label>
                 <textarea className="form-control" rows={5} value={profile.skills || ''} onChange={e => onChange({ skills: e.target.value })} placeholder="React, Embedded systems, QA automation" />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Reporting manager</label>
-                <select className="form-control" value={profile.reportingManager?._id || profile.reportingManager || ''} onChange={e => onChange({ reportingManager: e.target.value })}>
-                  <option value="">None</option>
-                  {users.filter(u => u._id !== profile._id).map(u => <option key={u._id} value={u._id}>{u.name}</option>)}
-                </select>
-              </div>
-              <div style={{ border:'1px solid #e2e8f0', borderRadius:14, padding:16 }}>
-                <div style={{ fontSize:12, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:12 }}>Assigned projects</div>
-                <div style={{ display:'grid', gap:10, maxHeight:180, overflowY:'auto' }}>
-                  {projects.map(project => {
-                    const selected = (profile.assignedProjects || []).some(ap => (ap._id || ap) === project._id)
-                    return (
-                      <label key={project._id} style={{ display:'flex', alignItems:'center', gap:10, color:'#334155' }}>
-                        <input type="checkbox" checked={selected} onChange={() => onChange({ assignedProjects: selected ? (profile.assignedProjects || []).filter(ap => (ap._id||ap) !== project._id) : [ ...(profile.assignedProjects || []), project._id ] })} />
-                        <span>{project.name}</span>
-                      </label>
-                    )
-                  })}
-                </div>
               </div>
               <div style={{ display:'flex', justifyContent:'flex-end', gap:12 }}>
                 <button type="button" className="btn btn-ghost" onClick={() => window.location.reload()}>Cancel</button>

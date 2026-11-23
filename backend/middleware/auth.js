@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { store, hydrateUser } = require('../services/data');
+const { requireAdministrator } = require('./roles');
 
 const auth = async (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
@@ -18,9 +19,6 @@ const auth = async (req, res, next) => {
   }
 };
 
-const adminOnly = (req, res, next) => {
-  if (req.user?.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
-  next();
-};
+const adminOnly = requireAdministrator;
 
 module.exports = { auth, adminOnly };

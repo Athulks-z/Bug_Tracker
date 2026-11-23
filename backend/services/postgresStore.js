@@ -59,8 +59,6 @@ function roleCode(role, bootstrapAdmin) {
 }
 
 function legacyRole(roleCodeValue) {
-  if (roleCodeValue === 'super_admin' || roleCodeValue === 'admin') return 'admin';
-  if (roleCodeValue === 'employee') return 'member';
   return roleCodeValue;
 }
 
@@ -348,7 +346,14 @@ async function saveRecord(client, collection, record) {
     } else if (record.reportingManager !== undefined) {
       await client.query('UPDATE public.users SET reporting_manager_id = NULL WHERE id = $1', [id]);
     }
-    return { ...record, _id: id, email: String(record.email || '').trim().toLowerCase(), createdAt: createdAt.toISOString(), updatedAt: updatedAt.toISOString() };
+    return {
+      ...record,
+      _id: id,
+      email: String(record.email || '').trim().toLowerCase(),
+      role: legacyRole(roleCode(record.role || 'member', record.bootstrapAdmin)),
+      createdAt: createdAt.toISOString(),
+      updatedAt: updatedAt.toISOString()
+    };
   }
 
   if (collection === 'projects') {

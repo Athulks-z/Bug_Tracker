@@ -23,7 +23,15 @@ function AdminRoute({ children }) {
   const { user, loading } = useAuth();
   if (loading) return null;
   if (!user) return <Navigate to="/login" />;
-  if (user.role !== 'admin') return <Navigate to="/" />;
+  if (!['super_admin', 'admin'].includes(user.role)) return <Navigate to="/" />;
+  return children;
+}
+
+function ProjectManagerRoute({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  if (!user) return <Navigate to="/login" />;
+  if (!['super_admin', 'admin', 'manager'].includes(user.role)) return <Navigate to="/" />;
   return children;
 }
 
@@ -42,7 +50,7 @@ export default function App() {
             <Route path="sprints" element={<Sprints />} />
             <Route path="releases" element={<Releases />} />
             <Route path="admin/users" element={<AdminRoute><AdminUsers /></AdminRoute>} />
-            <Route path="admin/projects" element={<AdminRoute><AdminProjects /></AdminRoute>} />
+            <Route path="admin/projects" element={<ProjectManagerRoute><AdminProjects /></ProjectManagerRoute>} />
           </Route>
         </Routes>
       </BrowserRouter>

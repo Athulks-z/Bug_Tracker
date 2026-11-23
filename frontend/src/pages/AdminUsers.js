@@ -4,6 +4,13 @@ import { useAuth } from '../context/AuthContext';
 
 const inputStyle = { width:'100%', padding:'9px 12px', border:'1px solid #e2e8f0', borderRadius:8, fontSize:13, color:'#1a202c', outline:'none' };
 const AVATAR_COLORS = ['#e24b4a','#378add','#1d9e75','#ef9f27','#534ab7','#d4537e'];
+const ROLE_OPTIONS = [
+  { value:'super_admin', label:'Super Admin' },
+  { value:'admin', label:'Admin' },
+  { value:'manager', label:'Manager' },
+  { value:'employee', label:'Employee' },
+  { value:'trainee', label:'Trainee' }
+];
 
 function Avatar({ name, size=36 }) {
   const c = AVATAR_COLORS[name?.charCodeAt(0) % AVATAR_COLORS.length] || '#378add';
@@ -18,7 +25,7 @@ export default function AdminUsers() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editUser, setEditUser] = useState(null);
-  const [form, setForm] = useState({ name:'', email:'', password:'', role:'member', domain:'Other', jobTitle:'', phone:'', skills:'', reportingManager:'', assignedProjects:[], active:true });
+  const [form, setForm] = useState({ name:'', email:'', password:'', role:'employee', domain:'Other', jobTitle:'', phone:'', skills:'', reportingManager:'', assignedProjects:[], active:true });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
@@ -36,7 +43,7 @@ export default function AdminUsers() {
 
   const openNew = () => {
     setEditUser(null);
-    setForm({ name:'', email:'', password:'', role:'member', domain:'Other', jobTitle:'', phone:'', skills:'', reportingManager:'', assignedProjects:[], active:true });
+    setForm({ name:'', email:'', password:'', role:'employee', domain:'Other', jobTitle:'', phone:'', skills:'', reportingManager:'', assignedProjects:[], active:true });
     setError(''); setShowModal(true);
   };
 
@@ -106,7 +113,7 @@ export default function AdminUsers() {
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))', gap:14, marginBottom:24 }}>
         {[
           { label:'Total Users', value:users.length, icon:'ti-users', color:'#378add' },
-          { label:'Admins', value:users.filter(u=>u.role==='admin').length, icon:'ti-shield', color:'#534ab7' },
+          { label:'Admins', value:users.filter(u=>['super_admin','admin'].includes(u.role)).length, icon:'ti-shield', color:'#534ab7' },
           { label:'Active', value:users.filter(u=>u.active).length, icon:'ti-circle-check', color:'#1d9e75' },
           { label:'Inactive', value:users.filter(u=>!u.active).length, icon:'ti-circle-x', color:'#e24b4a' },
         ].map(s=>(
@@ -154,8 +161,8 @@ export default function AdminUsers() {
                   </td>
                   <td style={{ padding:'12px 16px', color:'#475569' }}>{u.email}</td>
                   <td style={{ padding:'12px 16px' }}>
-                    <span style={{ background: u.role==='admin' ? '#534ab718' : '#37add818', color: u.role==='admin' ? '#534ab7' : '#378add', padding:'3px 10px', borderRadius:12, fontSize:12, fontWeight:500 }}>
-                      {u.role}
+                    <span style={{ background: ['super_admin','admin'].includes(u.role) ? '#534ab718' : '#37add818', color: ['super_admin','admin'].includes(u.role) ? '#534ab7' : '#378add', padding:'3px 10px', borderRadius:12, fontSize:12, fontWeight:500 }}>
+                      {ROLE_OPTIONS.find(role => role.value === u.role)?.label || u.role}
                     </span>
                   </td>
                   <td style={{ padding:'12px 16px', color:'#475569', fontSize:12 }}>{u.domain || 'Other'}</td>
@@ -168,12 +175,14 @@ export default function AdminUsers() {
                   <td style={{ padding:'12px 16px', color:'#64748b', fontSize:12 }}>{new Date(u.createdAt).toLocaleDateString()}</td>
                   <td style={{ padding:'12px 16px' }}>
                     <div style={{ display:'flex', gap:6 }}>
-                      <button onClick={()=>openEdit(u)} style={{ background:'none', border:'1px solid #e2e8f0', borderRadius:6, padding:'5px 10px', fontSize:13, color:'#64748b' }} title="Edit"><i className="ti ti-edit" /></button>
+                      {(me?.role === 'super_admin' || u.role !== 'super_admin') && <button onClick={()=>openEdit(u)} style={{ background:'none', border:'1px solid #e2e8f0', borderRadius:6, padding:'5px 10px', fontSize:13, color:'#64748b' }} title="Edit"><i className="ti ti-edit" /></button>}
                       {u._id !== me?._id && <>
-                        <button onClick={()=>toggleActive(u)} style={{ background:'none', border:`1px solid ${u.active?'#fde68a':'#bbf7d0'}`, borderRadius:6, padding:'5px 10px', fontSize:13, color: u.active?'#d97706':'#16a34a' }} title={u.active?'Deactivate':'Activate'}>
-                          <i className={`ti ti-${u.active?'user-off':'user-check'}`} />
-                        </button>
-                        <button onClick={()=>remove(u._id)} style={{ background:'none', border:'1px solid #fecaca', borderRadius:6, padding:'5px 10px', fontSize:13, color:'#ef4444' }} title="Delete"><i className="ti ti-trash" /></button>
+                        {(me?.role === 'super_admin' || u.role !== 'super_admin') && <>
+                          <button onClick={()=>toggleActive(u)} style={{ background:'none', border:`1px solid ${u.active?'#fde68a':'#bbf7d0'}`, borderRadius:6, padding:'5px 10px', fontSize:13, color: u.active?'#d97706':'#16a34a' }} title={u.active?'Deactivate':'Activate'}>
+                            <i className={`ti ti-${u.active?'user-off':'user-check'}`} />
+                          </button>
+                          <button onClick={()=>remove(u._id)} style={{ background:'none', border:'1px solid #fecaca', borderRadius:6, padding:'5px 10px', fontSize:13, color:'#ef4444' }} title="Delete"><i className="ti ti-trash" /></button>
+                        </>}
                       </>}
                     </div>
                   </td>
@@ -208,8 +217,9 @@ export default function AdminUsers() {
               <div>
                 <label style={{ display:'block', fontSize:11, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 }}>Role</label>
                 <select style={inputStyle} value={form.role} onChange={e=>setForm({...form,role:e.target.value})}>
-                  <option value="member">Member</option>
-                  <option value="admin">Admin</option>
+                  {ROLE_OPTIONS.filter(role => me?.role === 'super_admin' || role.value !== 'super_admin').map(role => (
+                    <option key={role.value} value={role.value}>{role.label}</option>
+                  ))}
                 </select>
               </div>
               <div>

@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api';
+import { useAuth } from '../context/AuthContext';
 
 const inputStyle = { width:'100%', padding:'9px 12px', border:'1px solid #e2e8f0', borderRadius:8, fontSize:13, color:'#1a202c', outline:'none' };
 
 export default function AdminProjects() {
+  const { user } = useAuth();
+  const membershipOnly = user?.role === 'manager';
   const [projects, setProjects] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -14,11 +17,20 @@ export default function AdminProjects() {
   const [saving, setSaving] = useState(false);
 
   const load = () => {
-    Promise.all([api.get('/projects'), api.get('/users')]).then(([p,u]) => { setProjects(p); setUsers(u); }).finally(()=>setLoading(false));
+    api.get('/projects')
+      .then(async (p) => {
+        setProjects(p);
+        const lists = membershipOnly
+          ? await Promise.all(p.map(project => api.get('/users', { available:true, assignable:true, project:project._id })))
+          : [await api.get('/users')];
+        setUsers([...new Map(lists.flat().map(member => [member._id, member])).values()]);
+      })
+      .finally(()=>setLoading(false));
   };
   useEffect(load, []);
 
   const openNew = () => {
+    if (membershipOnly) return;
     setEditProject(null);
     setForm({ name:'', description:'', key:'', members:[] });
     setError(''); setShowModal(true);
@@ -31,13 +43,14 @@ export default function AdminProjects() {
   };
 
   const save = async () => {
-    if (!form.name.trim() || !form.key.trim()) { setError('Name and key required'); return; }
+    if (!membershipOnly && (!form.name.trim() || !form.key.trim())) { setError('Name and key required'); return; }
     setSaving(true); setError('');
     try {
       if (editProject) {
-        const updated = await api.put(`/projects/${editProject._id}`, form);
+        const updated = await api.put(`/projects/${editProject._id}`, membershipOnly ? { members:form.members } : form);
         setProjects(ps => ps.map(p => p._id===updated._id ? updated : p));
       } else {
+        if (membershipOnly) return;
         const created = await api.post('/projects', form);
         setProjects(ps => [created, ...ps]);
       }
@@ -62,12 +75,12 @@ export default function AdminProjects() {
     <div style={{ padding:28 }}>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:24 }}>
         <div>
-          <h1 style={{ fontSize:22, fontWeight:700, color:'#1a202c' }}>Projects</h1>
+          <h1 style={{ fontSize:22, fontWeight:700, color:'#1a202c' }}>{membershipOnly ? 'Project Members' : 'Projects'}</h1>
           <p style={{ color:'#64748b', fontSize:13, marginTop:2 }}>{projects.length} projects</p>
         </div>
-        <button onClick={openNew} style={{ background:'#378add', color:'#fff', border:'none', borderRadius:8, padding:'9px 18px', fontSize:13, fontWeight:500, display:'flex', alignItems:'center', gap:6 }}>
+        {!membershipOnly && <button onClick={openNew} style={{ background:'#378add', color:'#fff', border:'none', borderRadius:8, padding:'9px 18px', fontSize:13, fontWeight:500, display:'flex', alignItems:'center', gap:6 }}>
           <i className="ti ti-plus" />New Project
-        </button>
+        </button>}
       </div>
 
       {loading ? (
@@ -76,7 +89,7 @@ export default function AdminProjects() {
         <div style={{ background:'#fff', borderRadius:12, border:'1px solid #e2e8f0', padding:48, textAlign:'center' }}>
           <i className="ti ti-folder-off" style={{ fontSize:40, color:'#e2e8f0', display:'block', marginBottom:12 }} />
           <p style={{ color:'#94a3b8', fontSize:14 }}>No projects yet</p>
-          <button onClick={openNew} style={{ marginTop:12, background:'#378add', color:'#fff', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13 }}>Create first project</button>
+          {!membershipOnly && <button onClick={openNew} style={{ marginTop:12, background:'#378add', color:'#fff', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13 }}>Create first project</button>}
         </div>
       ) : (
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(300px,1fr))', gap:16 }}>
@@ -96,7 +109,7 @@ export default function AdminProjects() {
                   </div>
                   <div style={{ display:'flex', gap:4 }}>
                     <button onClick={()=>openEdit(p)} style={{ background:'none', border:'1px solid #e2e8f0', borderRadius:6, padding:'5px 8px', fontSize:13, color:'#64748b' }}><i className="ti ti-edit" /></button>
-                    <button onClick={()=>remove(p._id)} style={{ background:'none', border:'1px solid #fecaca', borderRadius:6, padding:'5px 8px', fontSize:13, color:'#ef4444' }}><i className="ti ti-trash" /></button>
+                    {!membershipOnly && <button onClick={()=>remove(p._id)} style={{ background:'none', border:'1px solid #fecaca', borderRadius:6, padding:'5px 8px', fontSize:13, color:'#ef4444' }}><i className="ti ti-trash" /></button>}
                   </div>
                 </div>
                 {p.description && <p style={{ fontSize:13, color:'#64748b', marginBottom:12, lineHeight:1.5 }}>{p.description}</p>}
@@ -122,22 +135,22 @@ export default function AdminProjects() {
         <div onClick={()=>setShowModal(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
           <div onClick={e=>e.stopPropagation()} style={{ background:'#fff', borderRadius:14, padding:28, width:'100%', maxWidth:500, maxHeight:'90vh', overflow:'auto', boxShadow:'0 20px 60px rgba(0,0,0,0.3)' }}>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
-              <h2 style={{ fontSize:16, fontWeight:600 }}>{editProject ? 'Edit Project' : 'New Project'}</h2>
+              <h2 style={{ fontSize:16, fontWeight:600 }}>{membershipOnly ? 'Manage Project Members' : editProject ? 'Edit Project' : 'New Project'}</h2>
               <button onClick={()=>setShowModal(false)} style={{ background:'none', border:'none', fontSize:20, color:'#94a3b8' }}><i className="ti ti-x" /></button>
             </div>
             {error && <div style={{ background:'#fef2f2', border:'1px solid #fecaca', color:'#dc2626', padding:'10px 14px', borderRadius:8, marginBottom:14, fontSize:13 }}>{error}</div>}
-            <div style={{ marginBottom:14 }}>
+            {!membershipOnly && <div style={{ marginBottom:14 }}>
               <label style={{ display:'block', fontSize:11, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 }}>Project Name *</label>
               <input style={inputStyle} value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="e.g. Donnelly Apartments" />
-            </div>
-            <div style={{ marginBottom:14 }}>
+            </div>}
+            {!membershipOnly && <div style={{ marginBottom:14 }}>
               <label style={{ display:'block', fontSize:11, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 }}>Key * (short code)</label>
               <input style={inputStyle} value={form.key} onChange={e=>setForm({...form,key:e.target.value.toUpperCase().slice(0,8)})} placeholder="e.g. PR-139" maxLength={8} />
-            </div>
-            <div style={{ marginBottom:14 }}>
+            </div>}
+            {!membershipOnly && <div style={{ marginBottom:14 }}>
               <label style={{ display:'block', fontSize:11, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 }}>Description</label>
               <textarea style={{...inputStyle, height:70, resize:'vertical'}} value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Project description…" />
-            </div>
+            </div>}
             <div style={{ marginBottom:14 }}>
               <label style={{ display:'block', fontSize:11, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>Team Members</label>
               <div style={{ border:'1px solid #e2e8f0', borderRadius:8, padding:10, maxHeight:160, overflow:'auto' }}>

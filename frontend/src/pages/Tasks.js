@@ -32,7 +32,6 @@ export default function Tasks() {
     setLoading(true);
     try {
       const params = { ...filters, limit: 50 };
-      if (user?.role !== 'admin') params.assignee = 'me';
       const r = await api.get('/tasks', params);
       setTasks(r);
     } catch (err) {
@@ -84,6 +83,13 @@ export default function Tasks() {
       if (!payload.assignee) delete payload.assignee;
       if (!payload.startDate) delete payload.startDate;
       if (!payload.endDate) delete payload.endDate;
+      if (editTask && user?.role === 'employee') {
+        Object.keys(payload).forEach(field => {
+          if (!['title','description','status','priority','startDate','endDate'].includes(field)) delete payload[field];
+        });
+      } else if (!editTask && user?.role === 'employee') {
+        delete payload.assignee;
+      }
 
       const result = editTask
         ? await api.put(`/tasks/${editTask._id}`, payload)
@@ -110,6 +116,12 @@ export default function Tasks() {
   const isOverdue = (task) => {
     return task.endDate && new Date(task.endDate) < new Date() && task.status !== 'Completed';
   };
+  const recordId = (value) => typeof value === 'object' && value !== null ? value._id : value;
+  const canManageProject = (task) => ['super_admin','admin'].includes(user?.role)
+    || (user?.role === 'manager' && (task.project?.owner?._id === user?._id
+      || (task.project?.members || []).some(member => recordId(member) === user?._id)));
+  const canEditTask = (task) => canManageProject(task)
+    || (user?.role === 'employee' && [recordId(task.reporter),recordId(task.assignee)].includes(user?._id));
 
   return (
     <div style={{ padding:28 }}>
@@ -139,7 +151,7 @@ export default function Tasks() {
               setLoading(false);
             }
           }} className="btn" style={{ background:'#fff', border:'1px solid #e2e8f0', padding:'8px 12px' }}><i className="ti ti-download" /> Export</button>
-          <button onClick={openNew} className="btn btn-primary"><i className="ti ti-plus" /> New Task</button>
+          {user?.role !== 'trainee' && <button onClick={openNew} className="btn btn-primary"><i className="ti ti-plus" /> New Task</button>}
         </div>
       </div>
 
@@ -184,8 +196,8 @@ export default function Tasks() {
                   <td>{task.endDate ? fmtDate(task.endDate) : '—'}</td>
                   <td>
                     <div style={{ display:'flex', gap:6, justifyContent:'flex-end' }}>
-                      <button className="btn-icon" onClick={() => openEdit(task)} title="Edit"><i className="ti ti-edit" /></button>
-                      <button className="btn-icon" style={{ color:'#ef4444' }} onClick={() => remove(task._id)} title="Delete"><i className="ti ti-trash" /></button>
+                      {canEditTask(task) && <button className="btn-icon" onClick={() => openEdit(task)} title="Edit"><i className="ti ti-edit" /></button>}
+                      {canManageProject(task) && <button className="btn-icon" style={{ color:'#ef4444' }} onClick={() => remove(task._id)} title="Delete"><i className="ti ti-trash" /></button>}
                     </div>
                   </td>
                 </tr>
@@ -214,18 +226,18 @@ export default function Tasks() {
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
                 <div className="form-group">
                   <label className="form-label">Project *</label>
-                  <select className="form-control" value={form.project} onChange={e => setForm(f => ({ ...f, project: e.target.value }))}>
+                  <select className="form-control" value={form.project} disabled={Boolean(editTask && user?.role === 'employee')} onChange={e => setForm(f => ({ ...f, project: e.target.value }))}>
                     <option value="">Select project</option>
                     {projects.map(p => <option key={p._id} value={p._id}>{p.name}</option>)}
                   </select>
                 </div>
-                <div className="form-group">
+                {user?.role !== 'employee' && <div className="form-group">
                   <label className="form-label">Assignee</label>
                   <select className="form-control" value={form.assignee} onChange={e => setForm(f => ({ ...f, assignee: e.target.value }))}>
                     <option value="">Unassigned</option>
                     {users.map(u => <option key={u._id} value={u._id}>{u.name}</option>)}
                   </select>
-                </div>
+                </div>}
                 <div className="form-group">
                   <label className="form-label">Status</label>
                   <select className="form-control" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>

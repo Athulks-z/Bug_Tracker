@@ -34,7 +34,6 @@ export default function Tasks() {
     setLoading(true);
     try {
       const params = { ...filters, limit: 50 };
-      if (user?.role !== 'admin') params.assignee = 'me';
       const r = await api.get('/tasks', params);
       setTasks(r);
     } catch (err) {

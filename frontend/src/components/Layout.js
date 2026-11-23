@@ -45,7 +45,7 @@ export default function Layout() {
             </NavLink>
           ))}
 
-          {user?.role === 'admin' && (
+          {['super_admin', 'admin'].includes(user?.role) && (
             <>
               {!collapsed && <div style={{ padding:'12px 8px 4px', fontSize:10, color:'rgba(255,255,255,0.25)', textTransform:'uppercase', letterSpacing:'0.08em' }}>Admin</div>}
               {[
@@ -57,6 +57,15 @@ export default function Layout() {
                   {!collapsed && item.label}
                 </NavLink>
               ))}
+            </>
+          )}
+          {user?.role === 'manager' && (
+            <>
+              {!collapsed && <div style={{ padding:'12px 8px 4px', fontSize:10, color:'rgba(255,255,255,0.25)', textTransform:'uppercase', letterSpacing:'0.08em' }}>Management</div>}
+              <NavLink to="/admin/projects" style={({ isActive }) => navStyle(isActive)}>
+                <i className="ti ti-users" style={{ fontSize:16, flexShrink:0 }} />
+                {!collapsed && 'Project Members'}
+              </NavLink>
             </>
           )}
         </nav>

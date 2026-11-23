@@ -10,7 +10,7 @@ export default function AdminUsers() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editUser, setEditUser] = useState(null)
-  const [form, setForm] = useState({ name:'', email:'', password:'', role:'member' })
+  const [form, setForm] = useState({ name:'', email:'', password:'', role:'employee' })
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
 
@@ -21,7 +21,7 @@ export default function AdminUsers() {
 
   const openNew = () => {
     setEditUser(null)
-    setForm({ name:'', email:'', password:'', role:'member' })
+    setForm({ name:'', email:'', password:'', role:'employee' })
     setShowModal(true)
   }
   const openEdit = (u) => {
@@ -77,8 +77,8 @@ export default function AdminUsers() {
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:14, marginBottom:24 }}>
         {[
           { label:'Total', value:users.length, color:'#378add' },
-          { label:'Admins', value:users.filter(u=>u.role==='admin').length, color:'#ef9f27' },
-          { label:'Members', value:users.filter(u=>u.role==='member').length, color:'#1d9e75' },
+          { label:'Admins', value:users.filter(u=>['super_admin','admin'].includes(u.role)).length, color:'#ef9f27' },
+          { label:'Employees', value:users.filter(u=>u.role==='employee').length, color:'#1d9e75' },
           { label:'Inactive', value:users.filter(u=>!u.active).length, color:'#9ca3af' },
         ].map(s=>(
           <div key={s.label} className="card" style={{ padding:'14px 16px' }}>
@@ -169,11 +169,14 @@ export default function AdminUsers() {
                 <div className="form-group">
                   <label className="form-label">Role</label>
                   <select className="form-control" value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))}>
-                    <option value="member">Member</option>
+                    {me?.role === 'super_admin' && <option value="super_admin">Super Admin</option>}
                     <option value="admin">Admin</option>
+                    <option value="manager">Manager</option>
+                    <option value="employee">Employee</option>
+                    <option value="trainee">Trainee</option>
                   </select>
                   <p style={{ fontSize:11, color:'#9ca3af', marginTop:5 }}>
-                    Admins can manage users, all projects, and all issues.
+                    Role permissions are enforced by the API and limited by project access.
                   </p>
                 </div>
               </div>

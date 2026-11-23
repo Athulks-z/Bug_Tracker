@@ -24,6 +24,7 @@ test('normalized PostgreSQL store preserves CRUD and allocates issue numbers con
     });
     userIds.push(user._id);
     assert.equal((await store.findById('users', user._id)).email, email);
+    assert.equal((await store.findById('users', user._id)).role, 'employee');
     assert.equal((await store.list('users')).some((record) => record._id === user._id), true);
 
     await assert.rejects(

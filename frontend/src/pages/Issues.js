@@ -99,7 +99,16 @@ export default function Issues() {
     setSaving(true); setError('');
     try {
       if (editIssue) {
-        const updated = await api.put(`/issues/${editIssue._id}`, form);
+        const payload = user?.role === 'employee'
+          ? {
+            title: form.title,
+            description: form.description,
+            status: form.status,
+            severity: form.severity,
+            dueDate: form.dueDate
+          }
+          : form;
+        const updated = await api.put(`/issues/${editIssue._id}`, payload);
         setIssues(iss => iss.map(i => i._id===updated._id ? updated : i));
       } else {
         const created = await api.post('/issues', form);
@@ -139,6 +148,12 @@ export default function Issues() {
     await api.delete(`/issues/${id}`);
     setIssues(iss => iss.filter(i => i._id !== id));
   };
+  const recordId = (value) => typeof value === 'object' && value !== null ? value._id : value;
+  const canManageProject = (issue) => ['super_admin','admin'].includes(user?.role)
+    || (user?.role === 'manager' && (issue.project?.owner?._id === user?._id
+      || (issue.project?.members || []).some(member => recordId(member) === user?._id)));
+  const canEditIssue = (issue) => canManageProject(issue)
+    || (user?.role === 'employee' && [recordId(issue.reporter),recordId(issue.assignee)].includes(user?._id));
 
   const statusCounts = {};
   issues.forEach(i => { statusCounts[i.status] = (statusCounts[i.status]||0)+1; });
@@ -154,9 +169,9 @@ export default function Issues() {
           <button onClick={downloadCsv} disabled={downloading} style={{ background:'#fff', color:'#111827', border:'1px solid #e2e8f0', borderRadius:8, padding:'9px 18px', fontSize:13, display:'flex', alignItems:'center', gap:6 }}>
             <i className="ti ti-download" />{downloading ? 'Exporting…' : 'Download CSV'}
           </button>
-          <button onClick={openNew} style={{ background:'#378add', color:'#fff', border:'none', borderRadius:8, padding:'9px 18px', fontSize:13, fontWeight:500, display:'flex', alignItems:'center', gap:6 }}>
+          {user?.role !== 'trainee' && <button onClick={openNew} style={{ background:'#378add', color:'#fff', border:'none', borderRadius:8, padding:'9px 18px', fontSize:13, fontWeight:500, display:'flex', alignItems:'center', gap:6 }}>
             <i className="ti ti-plus" />Submit Issue
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -197,7 +212,7 @@ export default function Issues() {
           <div style={{ padding:48, textAlign:'center' }}>
             <i className="ti ti-bug-off" style={{ fontSize:40, color:'#e2e8f0', display:'block', marginBottom:12 }} />
             <p style={{ color:'#94a3b8', fontSize:14 }}>No issues found</p>
-            <button onClick={openNew} style={{ marginTop:12, background:'#378add', color:'#fff', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13 }}>Submit first issue</button>
+            {user?.role !== 'trainee' && <button onClick={openNew} style={{ marginTop:12, background:'#378add', color:'#fff', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13 }}>Submit first issue</button>}
           </div>
         ) : (
           <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
@@ -243,8 +258,8 @@ export default function Issues() {
                   <td style={{ padding:'12px 14px', color:'#64748b', fontSize:12 }}>{issue.dueDate ? new Date(issue.dueDate).toLocaleDateString() : '—'}</td>
                   <td style={{ padding:'12px 14px' }}>
                     <div style={{ display:'flex', gap:4 }}>
-                      <button onClick={()=>openEdit(issue)} style={{ background:'none', border:'1px solid #e2e8f0', borderRadius:6, padding:'4px 8px', color:'#64748b', fontSize:13 }} title="Edit"><i className="ti ti-edit" /></button>
-                      {(user?.role==='admin' || issue.reporter?._id===user?._id) && (
+                      {canEditIssue(issue) && <button onClick={()=>openEdit(issue)} style={{ background:'none', border:'1px solid #e2e8f0', borderRadius:6, padding:'4px 8px', color:'#64748b', fontSize:13 }} title="Edit"><i className="ti ti-edit" /></button>}
+                      {canManageProject(issue) && (
                         <button onClick={()=>remove(issue._id)} style={{ background:'none', border:'1px solid #fecaca', borderRadius:6, padding:'4px 8px', color:'#ef4444', fontSize:13 }} title="Delete"><i className="ti ti-trash" /></button>
                       )}
                     </div>
@@ -263,17 +278,17 @@ export default function Issues() {
           <Field label="Description"><textarea style={{...inputStyle, height:80, resize:'vertical'}} value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Describe the issue…" /></Field>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
             <Field label="Project *">
-              <select style={inputStyle} value={form.project} onChange={e=>setForm({...form,project:e.target.value})}>
+              <select style={inputStyle} value={form.project} disabled={Boolean(editIssue && user?.role === 'employee')} onChange={e=>setForm({...form,project:e.target.value})}>
                 <option value="">Select project</option>
                 {projects.map(p=><option key={p._id} value={p._id}>{p.name}</option>)}
               </select>
             </Field>
-            <Field label="Assignee">
+            {user?.role !== 'employee' && <Field label="Assignee">
               <select style={inputStyle} value={form.assignee} onChange={e=>setForm({...form,assignee:e.target.value})}>
                 <option value="">Unassigned</option>
                 {users.map(u=><option key={u._id} value={u._id}>{u.name}</option>)}
               </select>
-            </Field>
+            </Field>}
             <Field label="Status">
               <select style={inputStyle} value={form.status} onChange={e=>setForm({...form,status:e.target.value})}>
                 {STATUS_OPTS.map(s=><option key={s}>{s}</option>)}

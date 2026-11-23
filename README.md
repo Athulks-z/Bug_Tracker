@@ -4,8 +4,8 @@ A bug tracker built with React, Node.js, Express, and PostgreSQL storage.
 
 ## Features
 
-- JWT login and registration; the first account in an empty database becomes admin
-- Role-based access for admin and member accounts
+- JWT login and registration; the first account in an empty database becomes super admin
+- Five-role access control: super admin, admin, manager, employee, and trainee
 - Issue management, comments, attachments, activity, search, filters, and CSV export
 - Projects and team membership
 - Admin user management
@@ -35,7 +35,19 @@ Prerequisites: Node.js 18+ and a PostgreSQL database.
 1. Copy `backend/.env.example` to `backend/.env` and fill in the PostgreSQL connection settings.
 2. From the repository root, run the migration and start commands above. The API listens on `http://localhost:5000`.
 3. In `frontend`, set `REACT_APP_API_URL=http://localhost:5000/api`, run `npm install`, and run `npm start`.
-4. Open `http://localhost:3000/register`. On an empty database, the first account becomes admin; an imported database keeps its existing accounts.
+4. Open `http://localhost:3000/register`. On an empty database, the first account becomes super admin; an imported database keeps its existing accounts.
+
+## Roles and project permissions
+
+| Role | Permissions |
+|---|---|
+| Super admin | Full access; may assign any role, manage departments and global settings, and manage all projects and work items |
+| Admin | Manage users except super-admin accounts or assignments; manage all projects and work items |
+| Manager | Manage work and project membership within projects they belong to; no role or global-setting management |
+| Employee | Access assigned projects; create/update work items they reported or are assigned; comment and log time |
+| Trainee | Read-only access to assigned projects and work items |
+
+Department-based scopes are not currently populated. Manager, employee, and trainee project access is therefore based on project ownership and membership. Self-registration creates employee accounts after the initial super-admin account.
 
 ## Render deployment
 

@@ -63,7 +63,7 @@ router.post('/register', async (req, res) => {
     try {
       user = await store.insert('users', {
         ...userData,
-        role: users.length === 0 ? 'admin' : 'member',
+        role: users.length === 0 ? 'super_admin' : 'employee',
         ...(users.length === 0 ? { bootstrapAdmin: true } : {})
       });
     } catch (err) {
@@ -76,7 +76,7 @@ router.post('/register', async (req, res) => {
         }
         throw err;
       }
-      user = await store.insert('users', { ...userData, role: 'member' });
+      user = await store.insert('users', { ...userData, role: 'employee' });
     }
     res.status(201).json({ token: sign(user._id), user: publicUser(user) });
   } catch (err) {
@@ -109,6 +109,12 @@ router.get('/me', auth, (req, res) => res.json(req.user));
 router.put('/me', auth, async (req, res) => {
   try {
     const { name, email, phone, jobTitle, domain, skills, reportingManager, assignedProjects, avatar, password, currentPassword } = req.body || {};
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'role')) {
+      return res.status(403).json({ message: 'Only an administrator can change a user role' });
+    }
+    if (reportingManager !== undefined || assignedProjects !== undefined) {
+      return res.status(403).json({ message: 'Project access and reporting relationships are managed by an administrator' });
+    }
     if (name !== undefined && (typeof name !== 'string' || !name.trim() || name.trim().length > 120)) {
       return res.status(400).json({ message: 'Name must be between 1 and 120 characters' });
     }
@@ -133,8 +139,6 @@ router.put('/me', auth, async (req, res) => {
       jobTitle: jobTitle === undefined ? currentUser.jobTitle : jobTitle,
       domain: domain === undefined ? currentUser.domain : domain,
       skills: skills === undefined ? currentUser.skills : skills,
-      reportingManager: reportingManager === undefined ? currentUser.reportingManager : reportingManager,
-      assignedProjects: assignedProjects === undefined ? currentUser.assignedProjects : assignedProjects,
       avatar: avatar === undefined ? currentUser.avatar : avatar
     };
     if (update.email !== currentUser.email

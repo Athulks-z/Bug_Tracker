@@ -4,6 +4,8 @@ const {
   buildRecipients,
   buildAssignmentContent,
   buildAssignmentRejectedContent,
+  buildTaskBlockedContent,
+  buildStakeholderRecipients,
   SENDER_EMAIL
 } = require('./emailService');
 
@@ -71,4 +73,48 @@ test('rejection email includes the reason safely in text and HTML', () => {
   assert.match(content.html, /Blocked &lt;script&gt;<br>Need access/);
   assert.match(content.html, /Rejected by:<\/strong> Athul KS/);
   assert.doesNotMatch(content.html, /<script>/);
+});
+
+test('blocked-task email names the blocker and escapes task details', () => {
+  const content = buildTaskBlockedContent({
+    title: 'Update <portal>',
+    projectName: '<Website>',
+    blockedBy: '<Alice>'
+  });
+
+  assert.equal(content.subject, '[TaskTracker] Task blocked: Update <portal>');
+  assert.match(content.text, /Blocked by: <Alice>/);
+  assert.match(content.html, /&lt;Website&gt;/);
+  assert.match(content.html, /&lt;Alice&gt;/);
+  assert.doesNotMatch(content.html, /<Alice>/);
+});
+
+test('blocked-task notifications address every stakeholder and deduplicate sender', () => {
+  const recipients = buildStakeholderRecipients([
+    { id: 'one', name: 'One', email: 'one@example.com' },
+    { id: 'two', name: 'Two', email: 'two@example.com' },
+    { id: 'duplicate', name: 'Duplicate', email: 'ONE@example.com' },
+    { id: 'admin', name: 'Admin', email: SENDER_EMAIL }
+  ]);
+
+  assert.deepEqual(recipients.to.map(recipient => recipient.email), [
+    'one@example.com',
+    'two@example.com',
+    SENDER_EMAIL
+  ]);
+  assert.deepEqual(recipients.cc, []);
+});
+
+test('blocked-task notification falls back to the sender when no stakeholders exist', () => {
+  const recipients = buildStakeholderRecipients([]);
+
+  assert.deepEqual(recipients.to.map(recipient => recipient.email), [SENDER_EMAIL]);
+  assert.deepEqual(recipients.cc, []);
+});
+
+test('blocked-task notification rejects stakeholders with invalid email addresses', () => {
+  assert.throws(
+    () => buildStakeholderRecipients([{ email: 'not-an-email' }]),
+    /valid email/
+  );
 });

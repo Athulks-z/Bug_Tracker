@@ -8,7 +8,7 @@ const {
   canManageProject
 } = require('../middleware/roles');
 const { store, hydrateTask } = require('../services/data');
-const { queueAssignmentEmail } = require('../services/emailService');
+const { queueAssignmentEmail, queueTaskBlockedEmail } = require('../services/emailService');
 
 const isOverdue = (task) => task.endDate && new Date(task.endDate) < new Date() && task.status !== 'Completed';
 const matchesFilters = (task, query, userId) => (!query.project || task.project === query.project)
@@ -22,6 +22,24 @@ async function loadVisibleTasks(user) {
   const [tasks, projects] = await Promise.all([store.list('tasks'), store.list('projects')]);
   const visibleProjectIds = new Set(projects.filter((project) => canReadProject(user, project)).map((project) => project._id));
   return tasks.filter((task) => visibleProjectIds.has(task.project));
+}
+
+async function addBlockedEmailNotification(response, task, project, user) {
+  try {
+    response.blockedEmailNotification = {
+      queued: await queueTaskBlockedEmail({
+        task,
+        project,
+        blockedBy: user.name || user.email
+      })
+    };
+  } catch (error) {
+    console.error('Task was saved, but its blocked notification could not be queued:', error.name);
+    response.blockedEmailNotification = {
+      queued: false,
+      message: 'Task saved, but the stakeholder notification could not be queued. Check server logs.'
+    };
+  }
 }
 
 router.get('/', auth, async (req, res) => {
@@ -114,6 +132,9 @@ router.post('/', auth, async (req, res) => {
         };
       }
     }
+    if (task.status === 'Blocked') {
+      await addBlockedEmailNotification(response, task, projectRecord, req.user);
+    }
     res.status(201).json(response);
   } catch (err) {
     res.status(500).json({ message: 'Unable to create task' });
@@ -173,6 +194,12 @@ router.put('/:id', auth, async (req, res) => {
           message: 'Task saved, but the assignment email could not be queued. Check server logs.'
         };
       }
+    }
+    if (task.status === 'Blocked' && existing.status !== 'Blocked') {
+      const taskProject = update.project
+        ? await store.findById('projects', task.project)
+        : project;
+      await addBlockedEmailNotification(response, task, taskProject, req.user);
     }
     res.json(response);
   } catch (err) {

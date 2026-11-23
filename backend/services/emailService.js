@@ -47,6 +47,53 @@ function buildAssignmentRejectedContent({ kind, title, projectName, rejectedBy, 
   return { subject, text, html };
 }
 
+function buildTaskBlockedContent({ title, projectName, blockedBy }) {
+  const safeTitle = String(title || 'Untitled').replace(/[\r\n\x00-\x1f\x7f]+/g, ' ').trim();
+  const subject = `[TaskTracker] Task blocked: ${safeTitle}`;
+  const text = [
+    'A task has been marked as blocked.',
+    `Title: ${title || 'Untitled'}`,
+    `Project: ${projectName || 'Project'}`,
+    `Blocked by: ${blockedBy || 'TaskTracker user'}`
+  ].join('\n');
+  const html = `<p>A task has been marked as blocked.</p>
+    <ul>
+      <li><strong>Title:</strong> ${escapeHtml(title || 'Untitled')}</li>
+      <li><strong>Project:</strong> ${escapeHtml(projectName || 'Project')}</li>
+      <li><strong>Blocked by:</strong> ${escapeHtml(blockedBy || 'TaskTracker user')}</li>
+    </ul>`;
+  return { subject, text, html };
+}
+
+function buildStakeholderRecipients(stakeholders, senderEmail = SENDER_EMAIL) {
+  const to = [];
+  const cc = [];
+  const seen = new Set();
+  for (const stakeholder of stakeholders || []) {
+    const email = String(stakeholder.email || '').trim();
+    if (!email || !EMAIL_PATTERN.test(email)) {
+      throw new Error('A project stakeholder does not have a valid email address');
+    }
+    const key = email.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    to.push({
+      userId: stakeholder.id || stakeholder._id || null,
+      email,
+      name: stakeholder.name || ''
+    });
+  }
+  const senderKey = String(senderEmail || '').trim().toLowerCase();
+  if (senderEmail && !seen.has(senderKey)) {
+    cc.push({ userId: null, email: senderEmail, name: '' });
+  }
+  if (!to.length) {
+    to.push({ userId: null, email: senderEmail, name: '' });
+    cc.length = 0;
+  }
+  return { to, cc };
+}
+
 function buildRecipients(assignee, stakeholders, senderEmail = SENDER_EMAIL) {
   const toEmail = String(assignee?.email || '').trim();
   const to = toEmail ? {
@@ -232,6 +279,69 @@ async function queueAssignmentEmail({ kind, item, project, assigneeId, assignedB
   }
 }
 
+async function queueTaskBlockedEmail({ task, project, blockedBy }) {
+  const stakeholderResult = await pool.query(
+    `SELECT u.id, u.name, u.email
+     FROM public.project_stakeholders ps
+     JOIN public.users u ON u.id=ps.user_id
+     WHERE ps.project_id=$1 AND u.active
+     ORDER BY u.name, u.id`,
+    [String(project._id)]
+  );
+  const { to, cc } = buildStakeholderRecipients(stakeholderResult.rows);
+  const content = buildTaskBlockedContent({
+    title: task.title,
+    projectName: project.name || project.key,
+    blockedBy
+  });
+  const idempotencyKey = `task-blocked:${task._id}:${task.updatedAt || task.createdAt}`;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `INSERT INTO public.email_outbox
+       (event_type, subject, payload, status, idempotency_key)
+       VALUES ('task_blocked', $1, $2::jsonb, 'pending', $3)
+       ON CONFLICT (idempotency_key) DO NOTHING
+       RETURNING id`,
+      [content.subject, JSON.stringify({ text: content.text, html: content.html }), idempotencyKey]
+    );
+    if (!rows.length) {
+      await client.query('COMMIT');
+      return true;
+    }
+    const emailId = rows[0].id;
+    for (const recipient of to) {
+      await client.query(
+        `INSERT INTO public.email_recipients
+         (email_outbox_id, user_id, email_snapshot, name_snapshot, recipient_type, delivery_status)
+         VALUES ($1, $2, $3, $4, 'to', 'pending')`,
+        [emailId, recipient.userId, recipient.email, recipient.name]
+      );
+    }
+    for (const recipient of cc) {
+      await client.query(
+        `INSERT INTO public.email_recipients
+         (email_outbox_id, user_id, email_snapshot, name_snapshot, recipient_type, delivery_status)
+         VALUES ($1, $2, $3, $4, 'cc', 'pending')`,
+        [emailId, recipient.userId, recipient.email, recipient.name]
+      );
+    }
+    await client.query(
+      `INSERT INTO public.email_resources (email_outbox_id, project_scope_id, work_item_id)
+       VALUES ($1, $2, $3)`,
+      [emailId, String(project._id), String(task._id)]
+    );
+    await client.query('COMMIT');
+    return true;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function claimEmail() {
   const client = await pool.connect();
   try {
@@ -362,7 +472,10 @@ module.exports = {
   buildRecipients,
   buildAssignmentContent,
   buildAssignmentRejectedContent,
+  buildTaskBlockedContent,
+  buildStakeholderRecipients,
   queueAssignmentEmail,
+  queueTaskBlockedEmail,
   processPendingEmails,
   startEmailWorker
 };

@@ -20,10 +20,8 @@ export default function Sidebar() {
     }}>
       {/* Logo */}
       <div style={{ display:'flex', alignItems:'center', gap:10, padding:'18px 16px 14px', borderBottom:'1px solid rgba(255,255,255,0.07)' }}>
-        <div style={{ width:32, height:32, background:'#e24b4a', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontSize:16 }}>
-          <i className="ti ti-bug" />
-        </div>
-        <span style={{ color:'#fff', fontWeight:600, fontSize:15 }}>BugTracker</span>
+        <img src="/zcs_logo.png" alt="TaskTracker logo" style={{ width:32, height:32, objectFit:'contain', flexShrink:0 }} />
+        <span style={{ color:'#fff', fontWeight:600, fontSize:15 }}>TaskTracker</span>
       </div>
 
       {/* Nav */}

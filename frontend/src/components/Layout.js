@@ -23,10 +23,8 @@ export default function Layout() {
       {/* Sidebar */}
       <aside style={{ width: collapsed ? 60 : 220, background:'#0f1724', display:'flex', flexDirection:'column', transition:'width 0.2s', overflow:'hidden', flexShrink:0 }}>
         <div style={{ display:'flex', alignItems:'center', gap:10, padding:'16px', borderBottom:'1px solid rgba(255,255,255,0.08)' }}>
-          <div style={{ width:32, height:32, background:'#e24b4a', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontSize:16, flexShrink:0 }}>
-            <i className="ti ti-bug" />
-          </div>
-          {!collapsed && <span style={{ color:'#fff', fontSize:15, fontWeight:600, whiteSpace:'nowrap' }}>BugTracker</span>}
+          <img src="/zcs_logo.png" alt="TaskTracker logo" style={{ width:32, height:32, objectFit:'contain', flexShrink:0 }} />
+          {!collapsed && <span style={{ color:'#fff', fontSize:15, fontWeight:600, whiteSpace:'nowrap' }}>TaskTracker</span>}
           <button onClick={() => setCollapsed(!collapsed)} style={{ marginLeft:'auto', background:'none', border:'none', color:'rgba(255,255,255,0.4)', fontSize:16 }}>
             <i className={`ti ti-${collapsed ? 'layout-sidebar-right' : 'layout-sidebar'}`} />
           </button>

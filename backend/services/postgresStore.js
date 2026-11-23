@@ -161,6 +161,11 @@ async function loadRecords(client, collection) {
       endDate: dateOutput(row.due_date),
       dueDate: dateOutput(row.due_date),
       estimatedHours: row.estimate_hours === null ? 0 : Number(row.estimate_hours),
+      rejectedBy: row.rejected_by_user_id || '',
+      rejectedAt: row.rejected_at ? row.rejected_at.toISOString() : '',
+      closingRemarks: row.closing_remarks || '',
+      rejectReason: row.reject_reason || '',
+      completedAt: row.completed_at ? row.completed_at.toISOString() : '',
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString()
     }));

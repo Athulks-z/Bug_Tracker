@@ -11,6 +11,7 @@ import AdminProjects from './pages/AdminProjects';
 import Sprints from './pages/Sprints';
 import Releases from './pages/Releases';
 import Profile from './pages/Profile';
+import AssignmentResponse from './pages/AssignmentResponse';
 import Layout from './components/Layout';
 
 function PrivateRoute({ children }) {
@@ -42,6 +43,7 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/assignment-response" element={<AssignmentResponse />} />
           <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
             <Route index element={<Dashboard />} />
             <Route path="issues" element={<Issues />} />

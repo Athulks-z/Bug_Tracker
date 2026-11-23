@@ -101,8 +101,11 @@ router.post('/', auth, async (req, res) => {
     const response = await hydrateTask(task);
     if (assignee) {
       try {
-        await queueAssignmentEmail({ kind: 'task', item: task, project: projectRecord, assigneeId: assignee, assignedBy: req.user._id });
-        response.emailNotification = { queued: true };
+        const queued = await queueAssignmentEmail({ kind: 'task', item: task, project: projectRecord, assigneeId: assignee, assignedBy: req.user._id });
+        response.emailNotification = {
+          queued,
+          ...(queued ? {} : { message: 'Task was reassigned before its notification could be queued.' })
+        };
       } catch (error) {
         console.error('Task was created, but its assignment email could not be queued:', error.name);
         response.emailNotification = {
@@ -158,8 +161,11 @@ router.put('/:id', auth, async (req, res) => {
     if (update.assignee && update.assignee !== existing.assignee) {
       try {
         const targetProject = update.project ? await store.findById('projects', update.project) : project;
-        await queueAssignmentEmail({ kind: 'task', item: task, project: targetProject, assigneeId: update.assignee, assignedBy: req.user._id });
-        response.emailNotification = { queued: true };
+        const queued = await queueAssignmentEmail({ kind: 'task', item: task, project: targetProject, assigneeId: update.assignee, assignedBy: req.user._id });
+        response.emailNotification = {
+          queued,
+          ...(queued ? {} : { message: 'Task was reassigned before its notification could be queued.' })
+        };
       } catch (error) {
         console.error('Task was updated, but its assignment email could not be queued:', error.name);
         response.emailNotification = {

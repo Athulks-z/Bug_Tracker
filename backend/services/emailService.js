@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const pool = require('../config/db');
 
@@ -20,6 +21,30 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function buildAssignmentRejectedContent({ kind, title, projectName, rejectedBy, closingRemarks }) {
+  const itemType = kind === 'task' ? 'Task' : 'Issue';
+  const safeTitle = String(title || 'Untitled').replace(/[\r\n\x00-\x1f\x7f]+/g, ' ').trim();
+  const subject = `[TaskTracker] ${itemType} rejected: ${safeTitle}`;
+  const text = [
+    `The assignment for this ${itemType.toLowerCase()} was rejected.`,
+    `Title: ${title || 'Untitled'}`,
+    `Project: ${projectName || 'Project'}`,
+    `Rejected by: ${rejectedBy || 'Assigned user'}`,
+    '',
+    'Closing remarks:',
+    closingRemarks
+  ].join('\n');
+  const html = `<p>The assignment for this ${itemType.toLowerCase()} was rejected.</p>
+    <ul>
+      <li><strong>Title:</strong> ${escapeHtml(title || 'Untitled')}</li>
+      <li><strong>Project:</strong> ${escapeHtml(projectName || 'Project')}</li>
+      <li><strong>Rejected by:</strong> ${escapeHtml(rejectedBy || 'Assigned user')}</li>
+    </ul>
+    <p><strong>Closing remarks:</strong></p>
+    <p>${escapeHtml(closingRemarks).replace(/\r?\n/g, '<br>')}</p>`;
+  return { subject, text, html };
 }
 
 function buildRecipients(assignee, stakeholders, senderEmail = SENDER_EMAIL) {
@@ -50,7 +75,7 @@ function buildRecipients(assignee, stakeholders, senderEmail = SENDER_EMAIL) {
   return { to, cc };
 }
 
-function buildAssignmentContent({ kind, item, project, assignedBy, clientUrl }) {
+function buildAssignmentContent({ kind, item, project, assignedBy, clientUrl, acceptUrl, rejectUrl }) {
   const itemType = kind === 'task' ? 'Task' : 'Issue';
   const safeTitle = String(item.title || '').replace(/[\r\n\x00-\x1f\x7f]+/g, ' ').trim();
   const subject = `[TaskTracker] ${itemType} assigned: ${safeTitle || 'Untitled'}`;
@@ -68,6 +93,12 @@ function buildAssignmentContent({ kind, item, project, assignedBy, clientUrl }) 
     item.status ? `Status: ${item.status}` : '',
     dueDate ? `Due date: ${dueDate}` : '',
     '',
+    'Accept this assignment (it will move the item to In Progress):',
+    acceptUrl,
+    '',
+    'Reject this assignment and provide closing remarks:',
+    rejectUrl,
+    '',
     `Open TaskTracker: ${resourceUrl}`
   ].filter(Boolean).join('\n');
   const html = `<p>Hello ${escapeHtml(item.assignee?.name || 'there')},</p>
@@ -79,6 +110,10 @@ function buildAssignmentContent({ kind, item, project, assignedBy, clientUrl }) 
       ${item.status ? `<li><strong>Status:</strong> ${escapeHtml(item.status)}</li>` : ''}
       ${dueDate ? `<li><strong>Due date:</strong> ${escapeHtml(dueDate)}</li>` : ''}
     </ul>
+    <p>Accept this assignment to move it to In Progress:</p>
+    <p><a href="${escapeHtml(acceptUrl)}" style="display:inline-block;padding:10px 18px;background:#1d9e75;color:#fff;text-decoration:none;border-radius:6px">Accept assignment</a></p>
+    <p>Or reject it and provide closing remarks:</p>
+    <p><a href="${escapeHtml(rejectUrl)}" style="display:inline-block;padding:10px 18px;background:#e24b4a;color:#fff;text-decoration:none;border-radius:6px">Reject assignment</a></p>
     <p><a href="${escapeHtml(resourceUrl)}">Open TaskTracker</a></p>`;
   return { subject, text, html };
 }
@@ -115,17 +150,37 @@ async function queueAssignmentEmail({ kind, item, project, assigneeId, assignedB
   const assignee = assigneeResult.rows[0];
   if (!assignee) throw new Error('Assigned user is not active or no longer exists');
   const { to, cc } = buildRecipients(assignee, stakeholderResult.rows);
+  const token = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const responsePage = new URL('/assignment-response', `${(process.env.CLIENT_URL || 'http://localhost:3000').split(',')[0].trim().replace(/\/+$/, '')}/`);
+  responsePage.searchParams.set('token', token);
+  const acceptUrl = new URL(responsePage);
+  acceptUrl.searchParams.set('action', 'accept');
+  const rejectUrl = new URL(responsePage);
+  rejectUrl.searchParams.set('action', 'reject');
   const content = buildAssignmentContent({
     kind,
     item: { ...item, assignee },
     project,
     assignedBy: assignedByResult.rows[0]?.name || '',
-    clientUrl: (process.env.CLIENT_URL || 'http://localhost:3000').split(',')[0].trim()
+    clientUrl: (process.env.CLIENT_URL || 'http://localhost:3000').split(',')[0].trim(),
+    acceptUrl: acceptUrl.toString(),
+    rejectUrl: rejectUrl.toString()
   });
   const idempotencyKey = `assignment:${kind}:${item._id}:${assigneeId}:${item.updatedAt || item.createdAt}`;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    const currentAssignment = await client.query(
+      `SELECT 1 FROM public.work_items
+       WHERE id=$1 AND project_id=$2 AND assignee_user_id=$3
+       FOR UPDATE`,
+      [String(item._id), String(project._id), String(assigneeId)]
+    );
+    if (!currentAssignment.rowCount) {
+      await client.query('ROLLBACK');
+      return false;
+    }
     const { rows } = await client.query(
       `INSERT INTO public.email_outbox
        (event_type, subject, payload, status, idempotency_key)
@@ -139,7 +194,7 @@ async function queueAssignmentEmail({ kind, item, project, assigneeId, assignedB
     );
     if (!rows.length) {
       await client.query('COMMIT');
-      return false;
+      return true;
     }
     const emailId = rows[0].id;
     for (const recipient of [to, ...cc]) {
@@ -154,6 +209,18 @@ async function queueAssignmentEmail({ kind, item, project, assigneeId, assignedB
       `INSERT INTO public.email_resources (email_outbox_id, project_scope_id, work_item_id)
        VALUES ($1, $2, $3)`,
       [emailId, String(project._id), String(item._id)]
+    );
+    await client.query(
+      `UPDATE public.assignment_responses
+       SET invalidated_at=now()
+       WHERE work_item_id=$1 AND status='pending' AND invalidated_at IS NULL`,
+      [String(item._id)]
+    );
+    await client.query(
+      `INSERT INTO public.assignment_responses
+       (email_outbox_id, work_item_id, assigned_user_id, assignee_email_snapshot, token_hash, expires_at)
+       VALUES ($1, $2, $3, $4, $5, now() + interval '14 days')`,
+      [emailId, String(item._id), String(assigneeId), to.email, tokenHash]
     );
     await client.query('COMMIT');
     return true;
@@ -291,8 +358,10 @@ function startEmailWorker() {
 
 module.exports = {
   SENDER_EMAIL,
+  escapeHtml,
   buildRecipients,
   buildAssignmentContent,
+  buildAssignmentRejectedContent,
   queueAssignmentEmail,
   processPendingEmails,
   startEmailWorker

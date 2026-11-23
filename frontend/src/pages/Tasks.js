@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import { fmtDate } from '../utils';
 
-const STATUSES = ['To do', 'In progress', 'Blocked', 'Completed'];
+const STATUSES = ['To do', 'In progress', 'Blocked', 'Completed', 'Rejected'];
 const PRIORITIES = ['Critical', 'High', 'Medium', 'Low'];
 
 export default function Tasks() {
@@ -194,7 +194,15 @@ export default function Tasks() {
                   </td>
                   <td style={{ color:'#475569' }}>{task.project?.name || '—'}</td>
                   <td style={{ color:'#475569' }}>{task.assignee?.name || 'Unassigned'}</td>
-                  <td><span className={`badge badge-${task.status.replace(/\s+/g,'').toLowerCase()}`} style={{ minWidth:70 }}>{task.status}</span></td>
+                  <td>
+                    <span className={`badge badge-${task.status.replace(/\s+/g,'').toLowerCase()}`} style={{
+                      minWidth:70,
+                      ...(task.status === 'Rejected' ? { background:'#fee2e2', color:'#b91c1c' } : {})
+                    }}>{task.status}</span>
+                    {task.status === 'Rejected' && task.rejectedBy?.name && (
+                      <div style={{ color:'#64748b', fontSize:11, marginTop:4 }}>By {task.rejectedBy.name}</div>
+                    )}
+                  </td>
                   <td><span className={`badge badge-${task.priority.toLowerCase()}`} style={{ minWidth:70 }}>{task.priority}</span></td>
                   <td>{task.startDate ? fmtDate(task.startDate) : '—'}</td>
                   <td>{task.endDate ? fmtDate(task.endDate) : '—'}</td>

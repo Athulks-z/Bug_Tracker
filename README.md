@@ -40,9 +40,9 @@ Prerequisites: Node.js 18+ and a PostgreSQL database.
 
 ## Assignment email setup
 
-Assignment emails are sent from `zcrossingtasktracker@gmail.com` through Gmail SMTP. Set `EMAIL_SMTP_PASSWORD` in `backend/.env` to an App Password generated for that Google account (Google 2-Step Verification must be enabled); never use or commit the account's normal password. Keep the sender address fixed in the backend and do not set it from user input. Until the SMTP App Password is configured, assignment emails remain queued and the server logs a warning.
+Assignment emails are sent from `zcrossingtasktracker@gmail.com` through Gmail SMTP. Set `EMAIL_SMTP_PASSWORD` in `backend/.env` to an App Password generated for that Google account (Google 2-Step Verification must be enabled); never use or commit the account's normal password. Keep the sender address fixed in the backend and do not set it from user input. Until the SMTP App Password is configured, assignment emails remain queued and the server logs a warning. Apply database migration `005_assignment_responses.sql` before using assignment actions.
 
-Add project stakeholders in **Admin → Projects → Edit Project → Assignment Email CC**. When a task or issue is assigned or reassigned, the assignee receives the email; the selected project stakeholders and `zcrossingtasktracker@gmail.com` are copied. The email outbox retries temporary SMTP failures and records delivery state in PostgreSQL.
+Add project stakeholders in **Admin → Projects → Edit Project → Assignment Email CC**. When a task or issue is assigned or reassigned, the assignee receives the email; the selected project stakeholders and `zcrossingtasktracker@gmail.com` are copied. The assignee can accept from the email to move the item to **In progress**, or reject with required closing remarks. Rejection sets the item status to **Rejected** and queues a notice with those remarks to the assignee and project stakeholders. Action links are single-use, expire after 14 days, and stop working if the work item is reassigned. The email outbox retries temporary SMTP failures and records delivery state in PostgreSQL.
 
 ## Roles and project permissions
 

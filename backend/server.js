@@ -64,6 +64,7 @@ app.get('/api/health/ready', async (req, res) => {
 // Route Loading
 try {
     app.use('/api/auth', require('./routes/auth'));
+    app.use('/api/assignments', require('./routes/assignments'));
 
     app.use('/api/users', require('./routes/users'));
 

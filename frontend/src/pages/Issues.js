@@ -3,9 +3,9 @@ import api from '../api';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 
-const STATUS_OPTS = ['Open','To do','In progress','Reopen','Closed'];
+const STATUS_OPTS = ['Open','To do','In progress','Reopen','Closed','Rejected'];
 const SEV_OPTS = ['Showstopper','Major','Medium','Low','None'];
-const STATUS_COLORS = { Open:'#378add', Reopen:'#e24b4a', 'In progress':'#ef9f27', 'To do':'#1d9e75', Closed:'#64748b' };
+const STATUS_COLORS = { Open:'#378add', Reopen:'#e24b4a', 'In progress':'#ef9f27', 'To do':'#1d9e75', Closed:'#64748b', Rejected:'#b91c1c' };
 const SEV_COLORS = { Showstopper:'#e24b4a', Major:'#ef9f27', Medium:'#378add', Low:'#94a3b8', None:'#cbd5e1' };
 const AVATAR_COLORS = ['#e24b4a','#378add','#1d9e75','#ef9f27','#534ab7','#d4537e','#0f6e56','#3b6d11'];
 
@@ -249,6 +249,9 @@ export default function Issues() {
                   </td>
                   <td style={{ padding:'12px 14px' }}>
                     <span style={{ background:`${STATUS_COLORS[issue.status]||'#ccc'}18`, color:STATUS_COLORS[issue.status]||'#ccc', padding:'4px 12px', borderRadius:12, fontSize:12, fontWeight:500 }}>{issue.status}</span>
+                    {issue.status === 'Rejected' && issue.rejectedBy?.name && (
+                      <div style={{ color:'#64748b', fontSize:11, marginTop:5 }}>By {issue.rejectedBy.name}</div>
+                    )}
                   </td>
                   <td style={{ padding:'12px 14px' }}>
                     {issue.assignee ? (

@@ -23,10 +23,12 @@ export default function Login() {
     <div style={{ minHeight:'100vh', background:'#0f1724', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
       <div style={{ width:'100%', maxWidth:400 }}>
         <div style={{ textAlign:'center', marginBottom:32 }}>
-          <div style={{ width:48, height:48, background:'#e24b4a', borderRadius:12, display:'inline-flex', alignItems:'center', justifyContent:'center', marginBottom:12 }}>
-            <i className="ti ti-bug" style={{ fontSize:24, color:'#fff' }} />
-          </div>
-          <h1 style={{ color:'#fff', fontSize:24, fontWeight:600 }}>BugTracker</h1>
+          <img
+            src="/zcs_logo.png"
+            alt="BugTracker logo"
+            style={{ width:64, height:64, objectFit:'contain', marginBottom:12 }}
+          />
+          <h1 style={{ color:'#fff', fontSize:24, fontWeight:600 }}>TaskTracker</h1>
           <p style={{ color:'rgba(255,255,255,0.4)', marginTop:4, fontSize:14 }}>Sign in to your workspace</p>
         </div>
         <form onSubmit={submit} style={{ background:'#161f30', borderRadius:12, padding:28, border:'1px solid rgba(255,255,255,0.08)' }}>

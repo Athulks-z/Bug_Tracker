@@ -1,37 +1,55 @@
 const router = require('express').Router();
-const Sprint = require('../models/Sprint');
 const { auth } = require('../middleware/auth');
+const { store, publicRecord } = require('../services/data');
 
 router.get('/', auth, async (req, res) => {
   try {
-    const { project } = req.query;
-    const q = {};
-    if (project) q.project = project;
-    const sprints = await Sprint.find(q).sort({ startDate: -1 });
-    res.json(sprints);
-  } catch (err) { res.status(500).json({ message: err.message }); }
+    const sprints = (await store.list('sprints'))
+      .filter((sprint) => !req.query.project || sprint.project === req.query.project)
+      .sort((a, b) => String(b.startDate || '').localeCompare(String(a.startDate || '')));
+    res.json(sprints.map(publicRecord));
+  } catch (err) {
+    res.status(500).json({ message: 'Unable to load sprints' });
+  }
 });
 
 router.post('/', auth, async (req, res) => {
   try {
-    const sprint = new Sprint(req.body);
-    await sprint.save();
+    const { name, project, startDate, endDate, goal, status } = req.body || {};
+    const sprint = await store.insert('sprints', {
+      name: name || '',
+      project: project || '',
+      startDate: startDate || '',
+      endDate: endDate || '',
+      goal: goal || '',
+      status: status || 'Planned'
+    });
     res.status(201).json(sprint);
-  } catch (err) { res.status(500).json({ message: err.message }); }
+  } catch (err) {
+    res.status(500).json({ message: 'Unable to create sprint' });
+  }
 });
 
 router.put('/:id', auth, async (req, res) => {
   try {
-    const sprint = await Sprint.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const update = {};
+    ['name', 'project', 'startDate', 'endDate', 'goal', 'status']
+      .forEach((field) => { if (req.body?.[field] !== undefined) update[field] = req.body[field]; });
+    const sprint = await store.update('sprints', req.params.id, update);
+    if (!sprint) return res.status(404).json({ message: 'Not found' });
     res.json(sprint);
-  } catch (err) { res.status(500).json({ message: err.message }); }
+  } catch (err) {
+    res.status(500).json({ message: 'Unable to update sprint' });
+  }
 });
 
 router.delete('/:id', auth, async (req, res) => {
   try {
-    await Sprint.findByIdAndDelete(req.params.id);
+    await store.remove('sprints', req.params.id);
     res.json({ message: 'Deleted' });
-  } catch (err) { res.status(500).json({ message: err.message }); }
+  } catch (err) {
+    res.status(500).json({ message: 'Unable to delete sprint' });
+  }
 });
 
 module.exports = router;

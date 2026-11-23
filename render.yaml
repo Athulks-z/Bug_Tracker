@@ -4,10 +4,13 @@ services:
     env: node
     rootDir: backend
     buildCommand: npm install
+    preDeployCommand: npm run db:migrate && npm run db:migrate:normalized
     startCommand: node server.js
     envVars:
-      - key: MONGODB_URI
+      - key: DATABASE_URL
         sync: false
+      - key: DATABASE_SSL
+        value: "true"
       - key: JWT_SECRET
         generateValue: true
       - key: CLIENT_URL

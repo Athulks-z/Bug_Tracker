@@ -1,3 +1,6 @@
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
+
 const DEFAULT_JWT_EXPIRES_IN = '12h';
 
 function parseClientOrigins(value, nodeEnv) {
@@ -25,7 +28,9 @@ function parseClientOrigins(value, nodeEnv) {
 
 function loadConfig(env = process.env) {
   const nodeEnv = env.NODE_ENV || 'development';
-  if (!env.MONGODB_URI) throw new Error('MONGODB_URI is required');
+  if (!env.DATABASE_URL && !(env.DB_HOST && env.DB_NAME && env.DB_USER && env.DB_PASSWORD)) {
+    throw new Error('DATABASE_URL or DB_HOST, DB_NAME, DB_USER, and DB_PASSWORD are required');
+  }
   if (!env.JWT_SECRET || env.JWT_SECRET.length < 32) {
     throw new Error('JWT_SECRET must be set to at least 32 characters');
   }
@@ -45,10 +50,17 @@ function loadConfig(env = process.env) {
     throw new Error('JWT_EXPIRES_IN must be a duration such as 12h');
   }
 
+  const databasePoolMax = Number(env.DATABASE_POOL_MAX || 10);
+  if (!Number.isInteger(databasePoolMax) || databasePoolMax < 1 || databasePoolMax > 100) {
+    throw new Error('DATABASE_POOL_MAX must be an integer between 1 and 100');
+  }
+
   return {
     nodeEnv,
     port,
-    mongodbUri: env.MONGODB_URI,
+    databaseUrl: env.DATABASE_URL,
+    databaseSsl: env.DATABASE_SSL === 'true',
+    databasePoolMax,
     jwtSecret: env.JWT_SECRET,
     jwtExpiresIn,
     clientOrigins: parseClientOrigins(env.CLIENT_URL, nodeEnv),

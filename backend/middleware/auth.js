@@ -1,19 +1,20 @@
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const { store, hydrateUser } = require('../services/data');
 
 const auth = async (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ message: 'No token' });
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = await User.findById(decoded.id)
-      .select('-password')
-      .populate('reportingManager', 'name email')
-      .populate('assignedProjects', 'name key');
-    if (!req.user || !req.user.active) return res.status(401).json({ message: 'Unauthorized' });
+    const user = await store.findById('users', decoded.id);
+    if (!user || !user.active) return res.status(401).json({ message: 'Unauthorized' });
+    req.user = await hydrateUser(user);
     next();
-  } catch {
-    res.status(401).json({ message: 'Invalid token' });
+  } catch (err) {
+    if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+    next(err);
   }
 };
 

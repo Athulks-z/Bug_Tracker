@@ -1,142 +1,73 @@
-# BugTracker — Production-Ready Full Stack App
+# BugTracker
 
-A full-featured bug tracker similar to Zoho BugTracker. Built with React + Node.js + MongoDB.
+A bug tracker built with React, Node.js, Express, and PostgreSQL storage.
 
 ## Features
-- **Authentication** — JWT login/register, first user auto-becomes admin
-- **Issues** — create, edit, delete, filter by status/severity/search
-- **Projects** — multi-project support with team members
-- **Admin: Users** — add, edit, deactivate, delete team members
-- **Admin: Projects** — create and manage projects
-- **Dashboard** — stats, charts, issues assigned to you
-- **Role-based access** — admin vs member permissions
 
----
+- JWT login and registration; the first account in an empty database becomes admin
+- Role-based access for admin and member accounts
+- Issue management, comments, attachments, activity, search, filters, and CSV export
+- Projects and team membership
+- Admin user management
+- Dashboard, reports, tasks, sprints, releases, notifications, and issue templates
 
-## 🚀 Deploy on Render (Recommended — Free Tier)
+## PostgreSQL setup
 
-### Step 1: MongoDB Atlas (free database)
-1. Go to https://mongodb.com/atlas → create free account
-2. Create a **Free M0 cluster**
-3. Under Database Access → Add user (username + password)
-4. Under Network Access → Allow `0.0.0.0/0`
-5. Click Connect → Drivers → copy the connection string
-   - Looks like: `mongodb+srv://user:password@cluster.mongodb.net/bugtracker`
+The backend requires a PostgreSQL database. Copy `backend/.env.example` to `backend/.env` and set either `DATABASE_URL` or `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, and `DB_PASSWORD`. Also set `JWT_SECRET` to a random value of at least 32 characters and configure `CLIENT_URL`.
 
-### Step 2: Deploy Backend to Render
-1. Push this repo to GitHub
-2. Go to https://render.com → New → Web Service
-3. Connect your GitHub repo, set **Root Directory** = `backend`
-4. Settings:
-   - **Build Command**: `npm install`
-   - **Start Command**: `node server.js`
-   - **Environment**: Node
-5. Add Environment Variables:
-   - `MONGODB_URI` = your Atlas connection string
-   - `JWT_SECRET` = any long random string (e.g. `openssl rand -hex 32`)
-   - `CLIENT_URL` = your frontend URL (add after deploying frontend)
-   - `NODE_ENV` = `production`
-6. Deploy — note the URL (e.g. `https://bugtracker-backend.onrender.com`)
+Run database migrations from the repository root before starting the API:
 
-### Step 3: Deploy Frontend to Render
-1. Go to Render → New → Static Site
-2. Connect same GitHub repo, set **Root Directory** = `frontend`
-3. Settings:
-   - **Build Command**: `npm install && npm run build`
-   - **Publish Directory**: `build`
-4. Add Environment Variable:
-   - `REACT_APP_API_URL` = `https://bugtracker-backend.onrender.com/api`
-5. Add Redirect/Rewrite Rule: `/* → /index.html` (200 rewrite)
-6. Deploy — copy the frontend URL
-7. Go back to backend service → update `CLIENT_URL` env var with frontend URL → redeploy backend
-
----
-
-## 🚀 Deploy on Vercel
-
-### Backend (Vercel Serverless)
-```bash
-cd backend
-cp .env.example .env   # fill in values
-npx vercel --prod
-# Add env vars in Vercel dashboard
+```powershell
+npm --prefix backend install
+npm --prefix backend run db:migrate
+npm --prefix backend run db:migrate:normalized
+npm --prefix backend run dev
 ```
 
-### Frontend (Vercel)
-```bash
-cd frontend
-echo "REACT_APP_API_URL=https://your-backend.vercel.app/api" > .env.production
-npx vercel --prod
+The API reads and writes normalized PostgreSQL tables while preserving the existing API record shapes. `db:migrate:normalized` validates and converts the transitional `app_records` data in one transaction, verifies row counts, then renames that source table to `app_records_legacy`, which is preserved but not used by runtime storage. It will refuse cutover if references are invalid or normalized target tables already contain data. Legacy issue records without a type are explicitly mapped to `other`; memberships from both legacy arrays are combined. For the current development data, each side had two memberships with no overlap; the approved union is four. The database contains four users, one project, and two issues. The original Google Sheet was not modified.
+
+`db:migrate:sheets` is a legacy first-stage importer for databases that still have an empty `app_records` compatibility table. Do not run it after normalized cutover; the original imported records are preserved in `app_records_legacy`.
+
+## Local development
+
+Prerequisites: Node.js 18+ and a PostgreSQL database.
+
+1. Copy `backend/.env.example` to `backend/.env` and fill in the PostgreSQL connection settings.
+2. From the repository root, run the migration and start commands above. The API listens on `http://localhost:5000`.
+3. In `frontend`, set `REACT_APP_API_URL=http://localhost:5000/api`, run `npm install`, and run `npm start`.
+4. Open `http://localhost:3000/register`. On an empty database, the first account becomes admin; an imported database keeps its existing accounts.
+
+## Render deployment
+
+The repository includes `render.yaml`. Configure `DATABASE_URL`, `CLIENT_URL`, and `REACT_APP_API_URL` in Render. The backend runs versioned migrations before startup; use a PostgreSQL connection string available to the backend service and keep it in the platform's secret settings.
+
+## Project structure
+
+```text
+backend/
+  middleware/     JWT authentication and admin authorization
+  routes/         Express API routes
+  db/             Versioned schema and normalized data migrations
+  services/       Normalized PostgreSQL store and record helpers
+  server.js       API entry point
+frontend/
+  src/            React application
+render.yaml       Render deployment configuration
 ```
 
----
+## API endpoints
 
-## 💻 Local Development
-
-### Prerequisites
-- Node.js 18+
-- MongoDB Atlas account (or local MongoDB)
-
-### Setup
-```bash
-# 1. Clone and install
-git clone <your-repo>
-cd bugtracker
-
-# 2. Backend
-cd backend
-cp .env.example .env
-# Edit .env with your MONGODB_URI and JWT_SECRET
-npm install
-npm run dev   # runs on http://localhost:5000
-
-# 3. Frontend (new terminal)
-cd frontend
-echo "REACT_APP_API_URL=http://localhost:5000/api" > .env.local
-npm install
-npm start     # runs on http://localhost:3000
-```
-
-### First Login
-1. Go to http://localhost:3000/register
-2. Register — first user auto-becomes **admin**
-3. Admin can add more users at Admin → Users
-
----
-
-## Project Structure
-```
-bugtracker/
-├── backend/
-│   ├── models/         # Mongoose models (User, Project, Issue)
-│   ├── routes/         # Express routes (auth, users, projects, issues)
-│   ├── middleware/     # JWT auth + admin guard
-│   ├── server.js       # Entry point
-│   └── vercel.json     # Vercel config
-├── frontend/
-│   ├── src/
-│   │   ├── context/    # AuthContext (JWT state)
-│   │   ├── pages/      # Login, Register, Dashboard, Issues, Admin*
-│   │   ├── components/ # Layout (sidebar + nav)
-│   │   └── api.js      # Fetch wrapper with JWT
-│   └── public/
-└── render.yaml         # Render deployment config
-```
-
-## API Endpoints
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | /api/auth/register | — | Register (1st = admin) |
-| POST | /api/auth/login | — | Login → JWT token |
-| GET | /api/auth/me | ✓ | Current user |
-| GET | /api/users | ✓ | List users |
-| POST | /api/users | Admin | Add user |
-| PUT | /api/users/:id | Admin | Edit user |
-| DELETE | /api/users/:id | Admin | Delete user |
-| GET | /api/projects | ✓ | List projects |
-| POST | /api/projects | ✓ | Create project |
-| GET | /api/issues | ✓ | List issues (filterable) |
-| POST | /api/issues | ✓ | Create issue |
-| PUT | /api/issues/:id | ✓ | Update issue |
-| DELETE | /api/issues/:id | ✓ | Delete issue |
-| POST | /api/issues/:id/comments | ✓ | Add comment |
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/auth/register` | Register (first user becomes admin) |
+| POST | `/api/auth/login` | Sign in and receive a JWT |
+| GET/PUT | `/api/auth/me` | Read or update the current profile |
+| GET/POST/PUT/DELETE | `/api/users` | Admin user management |
+| GET/POST/PUT/DELETE | `/api/projects` | Project management |
+| GET/POST/PUT/DELETE | `/api/issues` | Issue management |
+| POST | `/api/issues/:id/comments` | Add an issue comment |
+| GET/POST/PUT/DELETE | `/api/tasks` | Task management |
+| GET/POST/PUT/DELETE | `/api/sprints` | Sprint management |
+| GET/POST/PUT/DELETE | `/api/releases` | Release management |
+| GET/POST/PUT/DELETE | `/api/templates` | Issue template management |
+| GET/PUT | `/api/notifications` | Read and update notifications |

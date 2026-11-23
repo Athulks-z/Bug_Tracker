@@ -1,19 +1,29 @@
 const router = require('express').Router();
-const Notification = require('../models/Notification');
 const { auth } = require('../middleware/auth');
+const { store, publicRecord } = require('../services/data');
 
 router.get('/', auth, async (req, res) => {
   try {
-    const notes = await Notification.find({ user: req.user._id }).sort({ createdAt: -1 }).limit(100);
-    res.json(notes);
-  } catch (err) { res.status(500).json({ message: err.message }); }
+    const notifications = (await store.list('notifications'))
+      .filter((notification) => notification.user === req.user._id)
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+      .slice(0, 100);
+    res.json(notifications.map(publicRecord));
+  } catch (err) {
+    res.status(500).json({ message: 'Unable to load notifications' });
+  }
 });
 
 router.put('/:id/read', auth, async (req, res) => {
   try {
-    const n = await Notification.findByIdAndUpdate(req.params.id, { read: true }, { new: true });
-    res.json(n);
-  } catch (err) { res.status(500).json({ message: err.message }); }
+    const notification = await store.findById('notifications', req.params.id);
+    if (!notification || notification.user !== req.user._id) {
+      return res.status(404).json({ message: 'Notification not found' });
+    }
+    res.json(await store.update('notifications', req.params.id, { read: true }));
+  } catch (err) {
+    res.status(500).json({ message: 'Unable to mark notification as read' });
+  }
 });
 
 module.exports = router;

@@ -1,12 +1,7 @@
 const express = require('express');
-const mongoose = require('mongoose');
 const cors = require('cors');
-const dotenv = require('dotenv');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const mongoSanitize = require('express-mongo-sanitize');
-
-dotenv.config();
 
 const { loadConfig } = require('./config');
 const config = loadConfig();
@@ -44,8 +39,6 @@ app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
 
 app.use(express.json({ limit: config.jsonLimit }));
-app.use(mongoSanitize());
-
 // serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
@@ -56,6 +49,16 @@ app.get('/api/health', (req, res) => {
         uptime: process.uptime(),
         timestamp: new Date().toISOString()
     });
+});
+
+app.get('/api/health/ready', async (req, res) => {
+    try {
+        await require('./config/db').query('SELECT 1');
+        res.status(200).json({ status: 'ready' });
+    } catch (err) {
+        console.error('Database readiness check failed:', err.name);
+        res.status(503).json({ status: 'unavailable' });
+    }
 });
 
 // Route Loading
@@ -96,19 +99,16 @@ app.use((err, req, res, next) => {
     });
 });
 
-// MongoDB Connection
+// Initialize storage before accepting API traffic.
 async function startServer() {
     try {
-        await mongoose.connect(config.mongodbUri, {
-            serverSelectionTimeoutMS: 30000
-        });
-        await require('./models/User').init();
+        await require('./services/data').store.initialize();
         app.listen(config.port, '0.0.0.0', () => {
-            console.info(`Bug Tracker API listening on port ${config.port}`);
+            console.info(`Bug Tracker API listening on port ${config.port} with PostgreSQL storage`);
         });
 
     } catch (err) {
-        console.error('Server startup failed:', err.name);
+        console.error('Server startup failed:', err.name, err.message);
         process.exit(1);
     }
 }

@@ -1,8 +1,9 @@
 const router = require('express').Router();
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const bcrypt = require('bcryptjs');
 const { auth } = require('../middleware/auth');
 const { isStrongPassword } = require('../utils/passwordPolicy');
+const { store, publicUser, hydrateUser } = require('../services/data');
 
 const sign = (id) => jwt.sign(
   { id },
@@ -12,16 +13,15 @@ const sign = (id) => jwt.sign(
 
 router.get('/config', async (req, res) => {
   try {
-    const hasUsers = await User.exists({});
+    const users = await store.list('users');
     res.json({
-      allowSelfRegistration: !hasUsers || process.env.ALLOW_SELF_REGISTRATION === 'true'
+      allowSelfRegistration: users.length === 0 || process.env.ALLOW_SELF_REGISTRATION === 'true'
     });
-  } catch {
+  } catch (err) {
     res.status(500).json({ message: 'Unable to load public configuration' });
   }
 });
 
-// POST /api/auth/register (first user becomes admin)
 router.post('/register', async (req, res) => {
   try {
     const { name, email, password, jobTitle, domain, phone, skills } = req.body || {};
@@ -40,68 +40,72 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ message: 'Password must be at least 10 characters and include uppercase and lowercase letters and a number' });
     }
     const normalizedEmail = email.trim().toLowerCase();
-    if (await User.findOne({ email: normalizedEmail })) return res.status(400).json({ message: 'Email already exists' });
-    const count = await User.countDocuments();
+    const users = await store.list('users');
+    if (users.some((user) => user.email === normalizedEmail)) {
+      return res.status(400).json({ message: 'Email already exists' });
+    }
     const allowSelfRegistration = process.env.ALLOW_SELF_REGISTRATION === 'true';
-    if (count > 0 && !allowSelfRegistration) {
+    if (users.length > 0 && !allowSelfRegistration) {
       return res.status(403).json({ message: 'Self-registration is disabled' });
     }
-
     const userData = {
       name: name.trim(),
       email: normalizedEmail,
+      password: await bcrypt.hash(password, 10),
       jobTitle: jobTitle || '',
       domain: domain || 'Other',
       phone: phone || '',
-      skills: skills || ''
+      skills: skills || '',
+      assignedProjects: [],
+      active: true
     };
     let user;
     try {
-      user = await User.create({
+      user = await store.insert('users', {
         ...userData,
-        password,
-        role: count === 0 ? 'admin' : 'member',
-        ...(count === 0 ? { bootstrapAdmin: true } : {})
+        role: users.length === 0 ? 'admin' : 'member',
+        ...(users.length === 0 ? { bootstrapAdmin: true } : {})
       });
     } catch (err) {
-      const duplicateBootstrapAdmin = err.code === 11000
-        && (err.keyPattern?.bootstrapAdmin || err.message.includes('bootstrapAdmin_1'));
-      if (!duplicateBootstrapAdmin) throw err;
-      if (!allowSelfRegistration) {
-        return res.status(403).json({ message: 'Self-registration is disabled' });
+      if (err.code === 'DUPLICATE_EMAIL') {
+        return res.status(400).json({ message: 'Email already exists' });
       }
-      user = await User.create({ ...userData, password, role: 'member' });
+      if (err.code !== 'BOOTSTRAP_ADMIN_EXISTS' || !allowSelfRegistration) {
+        if (err.code === 'BOOTSTRAP_ADMIN_EXISTS') {
+          return res.status(403).json({ message: 'Self-registration is disabled' });
+        }
+        throw err;
+      }
+      user = await store.insert('users', { ...userData, role: 'member' });
     }
-    res.status(201).json({ token: sign(user._id), user });
+    res.status(201).json({ token: sign(user._id), user: publicUser(user) });
   } catch (err) {
-    if (err.name === 'ValidationError') {
-      return res.status(400).json({ message: err.message });
+    if (err.code === 'DUPLICATE_EMAIL') {
+      return res.status(400).json({ message: 'Email already exists' });
     }
     res.status(500).json({ message: 'Unable to register' });
   }
 });
 
-// POST /api/auth/login
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body || {};
     if (typeof email !== 'string' || typeof password !== 'string') {
       return res.status(400).json({ message: 'Email and password are required' });
     }
-    const user = await User.findOne({ email: email.trim().toLowerCase() });
-    if (!user || !await user.comparePassword(password))
+    const user = await store.findOne('users', (item) => item.email === email.trim().toLowerCase());
+    if (!user || !await bcrypt.compare(password, user.password)) {
       return res.status(401).json({ message: 'Invalid credentials' });
+    }
     if (!user.active) return res.status(403).json({ message: 'Account disabled' });
-    res.json({ token: sign(user._id), user });
+    res.json({ token: sign(user._id), user: await hydrateUser(user) });
   } catch (err) {
     res.status(500).json({ message: 'Unable to sign in' });
   }
 });
 
-// GET /api/auth/me
 router.get('/me', auth, (req, res) => res.json(req.user));
 
-// PUT /api/auth/me
 router.put('/me', auth, async (req, res) => {
   try {
     const { name, email, phone, jobTitle, domain, skills, reportingManager, assignedProjects, avatar, password, currentPassword } = req.body || {};
@@ -121,35 +125,38 @@ router.put('/me', auth, async (req, res) => {
       || (currentPassword !== undefined && typeof currentPassword !== 'string')) {
       return res.status(400).json({ message: 'Password fields must be strings' });
     }
+    const currentUser = await store.findById('users', req.user._id);
     const update = {
-      name,
-      email: email?.trim().toLowerCase(),
-      phone,
-      jobTitle,
-      domain,
-      skills,
-      reportingManager,
-      assignedProjects,
-      avatar
+      name: name === undefined ? currentUser.name : name.trim(),
+      email: email === undefined ? currentUser.email : email.trim().toLowerCase(),
+      phone: phone === undefined ? currentUser.phone : phone,
+      jobTitle: jobTitle === undefined ? currentUser.jobTitle : jobTitle,
+      domain: domain === undefined ? currentUser.domain : domain,
+      skills: skills === undefined ? currentUser.skills : skills,
+      reportingManager: reportingManager === undefined ? currentUser.reportingManager : reportingManager,
+      assignedProjects: assignedProjects === undefined ? currentUser.assignedProjects : assignedProjects,
+      avatar: avatar === undefined ? currentUser.avatar : avatar
     };
+    if (update.email !== currentUser.email
+      && await store.findOne('users', (user) => user.email === update.email && user._id !== currentUser._id)) {
+      return res.status(400).json({ message: 'Email already exists' });
+    }
     if (password) {
-      const currentUser = await User.findById(req.user._id);
-      if (!currentPassword || !currentUser || !await currentUser.comparePassword(currentPassword)) {
+      if (!currentPassword || !await bcrypt.compare(currentPassword, currentUser.password)) {
         return res.status(400).json({ message: 'Current password is incorrect' });
       }
       if (!isStrongPassword(password)) {
         return res.status(400).json({ message: 'Password must be at least 10 characters and include uppercase and lowercase letters and a number' });
       }
-      const bcrypt = require('bcryptjs');
       update.password = await bcrypt.hash(password, 10);
     }
-    const user = await User.findByIdAndUpdate(req.user._id, update, { new: true })
-      .select('-password')
-      .populate('reportingManager', 'name email')
-      .populate('assignedProjects', 'name key');
+    const user = await store.update('users', req.user._id, update);
     if (!user) return res.status(404).json({ message: 'User not found' });
-    res.json(user);
+    res.json(await hydrateUser(user));
   } catch (err) {
+    if (err.code === 'DUPLICATE_EMAIL') {
+      return res.status(400).json({ message: 'Email already exists' });
+    }
     res.status(500).json({ message: 'Unable to update profile' });
   }
 });

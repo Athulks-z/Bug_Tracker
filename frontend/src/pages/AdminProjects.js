@@ -12,7 +12,7 @@ export default function AdminProjects() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editProject, setEditProject] = useState(null);
-  const [form, setForm] = useState({ name:'', description:'', key:'', members:[] });
+  const [form, setForm] = useState({ name:'', description:'', key:'', members:[], stakeholders:[] });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -32,13 +32,19 @@ export default function AdminProjects() {
   const openNew = () => {
     if (membershipOnly) return;
     setEditProject(null);
-    setForm({ name:'', description:'', key:'', members:[] });
+    setForm({ name:'', description:'', key:'', members:[], stakeholders:[] });
     setError(''); setShowModal(true);
   };
 
   const openEdit = (p) => {
     setEditProject(p);
-    setForm({ name:p.name, description:p.description||'', key:p.key, members:p.members?.map(m=>m._id||m)||[] });
+    setForm({
+      name:p.name,
+      description:p.description||'',
+      key:p.key,
+      members:p.members?.map(m=>m._id||m)||[],
+      stakeholders:p.stakeholders?.map(user=>user._id)||[]
+    });
     setError(''); setShowModal(true);
   };
 
@@ -47,7 +53,9 @@ export default function AdminProjects() {
     setSaving(true); setError('');
     try {
       if (editProject) {
-        const updated = await api.put(`/projects/${editProject._id}`, membershipOnly ? { members:form.members } : form);
+        const updated = await api.put(`/projects/${editProject._id}`, membershipOnly
+          ? { members:form.members, stakeholders:form.stakeholders }
+          : form);
         setProjects(ps => ps.map(p => p._id===updated._id ? updated : p));
       } else {
         if (membershipOnly) return;
@@ -67,6 +75,15 @@ export default function AdminProjects() {
 
   const toggleMember = (uid) => {
     setForm(f => ({ ...f, members: f.members.includes(uid) ? f.members.filter(m=>m!==uid) : [...f.members, uid] }));
+  };
+
+  const toggleStakeholder = (uid) => {
+    setForm(f => ({
+      ...f,
+      stakeholders: f.stakeholders.includes(uid)
+        ? f.stakeholders.filter(id=>id!==uid)
+        : [...f.stakeholders, uid]
+    }));
   };
 
   const PROJECT_COLORS = ['#378add','#1d9e75','#ef9f27','#534ab7','#e24b4a','#d4537e'];
@@ -105,6 +122,7 @@ export default function AdminProjects() {
                     <div>
                       <div style={{ fontWeight:600, color:'#1a202c', fontSize:14 }}>{p.name}</div>
                       <div style={{ fontSize:11, color:'#94a3b8', marginTop:1 }}>{p.members?.length||0} members</div>
+                      <div style={{ fontSize:11, color:'#94a3b8', marginTop:1 }}>{p.stakeholders?.length||0} email stakeholders</div>
                     </div>
                   </div>
                   <div style={{ display:'flex', gap:4 }}>
@@ -159,6 +177,19 @@ export default function AdminProjects() {
                     <input type="checkbox" checked={form.members.includes(u._id)} onChange={()=>toggleMember(u._id)} style={{ accentColor:'#378add' }} />
                     <span style={{ fontSize:13, color:'#334155' }}>{u.name}</span>
                     <span style={{ fontSize:11, color:'#94a3b8', marginLeft:'auto' }}>{u.role}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div style={{ marginBottom:14 }}>
+              <label style={{ display:'block', fontSize:11, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:4 }}>Assignment Email CC</label>
+              <p style={{ fontSize:11, color:'#94a3b8', margin:'0 0 8px' }}>Selected project stakeholders are copied when a task or issue is assigned. zcrossingtasktracker@gmail.com is always copied.</p>
+              <div style={{ border:'1px solid #e2e8f0', borderRadius:8, padding:10, maxHeight:160, overflow:'auto' }}>
+                {users.map(u => (
+                  <label key={u._id} style={{ display:'flex', alignItems:'center', gap:10, padding:'6px 4px', cursor:'pointer' }}>
+                    <input type="checkbox" checked={form.stakeholders.includes(u._id)} onChange={()=>toggleStakeholder(u._id)} style={{ accentColor:'#378add' }} />
+                    <span style={{ fontSize:13, color:'#334155' }}>{u.name}</span>
+                    <span style={{ fontSize:11, color:'#94a3b8', marginLeft:'auto' }}>{u.email || u.role}</span>
                   </label>
                 ))}
               </div>

@@ -103,6 +103,7 @@ app.use((err, req, res, next) => {
 async function startServer() {
     try {
         await require('./services/data').store.initialize();
+        require('./services/emailService').startEmailWorker();
         app.listen(config.port, '0.0.0.0', () => {
             console.info(`Bug Tracker API listening on port ${config.port} with PostgreSQL storage`);
         });

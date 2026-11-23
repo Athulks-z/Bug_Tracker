@@ -10,6 +10,7 @@ const {
 } = require('../middleware/roles');
 const notify = require('../utils/notify');
 const { store, hydrateIssue } = require('../services/data');
+const { queueAssignmentEmail } = require('../services/emailService');
 
 const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads', 'issues');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -151,7 +152,7 @@ router.post('/', auth, async (req, res) => {
     }
     if (assignee && !['employee'].includes(req.user.role)) {
       const assigneeRecord = await store.findById('users', assignee);
-      if (!assigneeRecord
+      if (!assigneeRecord?.active
         || (projectRecord.owner !== assignee
           && !(projectRecord.members || []).map(String).includes(String(assignee)))) {
         return res.status(400).json({ message: 'The assignee must be a member of this project' });
@@ -172,7 +173,20 @@ router.post('/', auth, async (req, res) => {
       activity: [{ user: req.user._id, action: 'created', details: `Issue created by ${req.user.name || req.user._id}`, createdAt: new Date().toISOString() }],
       reopenedCount: 0
     });
-    res.status(201).json(await hydrateIssue(issue));
+    const response = await hydrateIssue(issue);
+    if (assignee) {
+      try {
+        await queueAssignmentEmail({ kind: 'issue', item: issue, project: projectRecord, assigneeId: assignee, assignedBy: req.user._id });
+        response.emailNotification = { queued: true };
+      } catch (error) {
+        console.error('Issue was created, but its assignment email could not be queued:', error.name);
+        response.emailNotification = {
+          queued: false,
+          message: 'Issue saved, but the assignment email could not be queued. Check server logs.'
+        };
+      }
+    }
+    res.status(201).json(response);
   } catch (err) {
     res.status(500).json({ message: 'Unable to create issue' });
   }
@@ -206,7 +220,7 @@ router.put('/:id', auth, async (req, res) => {
       const targetProjectId = update.project || issue.project;
       const assigneeRecord = await store.findById('users', update.assignee);
       const targetProject = update.project ? await store.findById('projects', targetProjectId) : project;
-      if (!assigneeRecord
+      if (!assigneeRecord?.active
         || (targetProject?.owner !== update.assignee
           && !(targetProject?.members || []).map(String).includes(String(update.assignee)))) {
         return res.status(400).json({ message: 'The assignee must be a member of this project' });
@@ -233,7 +247,21 @@ router.put('/:id', auth, async (req, res) => {
       await notify.sendNotification({ type: 'issue_timelog', issue: issue._id, user: req.user._id, details });
     }
     const saved = await store.update('issues', issue._id, update);
-    res.json(await hydrateIssue(saved));
+    const response = await hydrateIssue(saved);
+    if (update.assignee && update.assignee !== before.assignee) {
+      try {
+        const targetProject = update.project ? await store.findById('projects', update.project) : project;
+        await queueAssignmentEmail({ kind: 'issue', item: saved, project: targetProject, assigneeId: update.assignee, assignedBy: req.user._id });
+        response.emailNotification = { queued: true };
+      } catch (error) {
+        console.error('Issue was updated, but its assignment email could not be queued:', error.name);
+        response.emailNotification = {
+          queued: false,
+          message: 'Issue saved, but the assignment email could not be queued. Check server logs.'
+        };
+      }
+    }
+    res.json(response);
   } catch (err) {
     res.status(500).json({ message: 'Unable to update issue' });
   }

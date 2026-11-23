@@ -8,6 +8,7 @@ const {
   canManageProject
 } = require('../middleware/roles');
 const { store, hydrateTask } = require('../services/data');
+const { queueAssignmentEmail } = require('../services/emailService');
 
 const isOverdue = (task) => task.endDate && new Date(task.endDate) < new Date() && task.status !== 'Completed';
 const matchesFilters = (task, query, userId) => (!query.project || task.project === query.project)
@@ -86,7 +87,7 @@ router.post('/', auth, async (req, res) => {
     }
     if (assignee && req.user.role !== 'employee') {
       const assigneeRecord = await store.findById('users', assignee);
-      if (!assigneeRecord
+      if (!assigneeRecord?.active
         || (projectRecord.owner !== assignee
           && !(projectRecord.members || []).map(String).includes(String(assignee)))) {
         return res.status(400).json({ message: 'The assignee must be a member of this project' });
@@ -97,7 +98,20 @@ router.post('/', auth, async (req, res) => {
       assignee: assignee || '', status: status || 'To do', priority: priority || 'Medium',
       startDate: startDate || '', endDate: endDate || ''
     });
-    res.status(201).json(await hydrateTask(task));
+    const response = await hydrateTask(task);
+    if (assignee) {
+      try {
+        await queueAssignmentEmail({ kind: 'task', item: task, project: projectRecord, assigneeId: assignee, assignedBy: req.user._id });
+        response.emailNotification = { queued: true };
+      } catch (error) {
+        console.error('Task was created, but its assignment email could not be queued:', error.name);
+        response.emailNotification = {
+          queued: false,
+          message: 'Task saved, but the assignment email could not be queued. Check server logs.'
+        };
+      }
+    }
+    res.status(201).json(response);
   } catch (err) {
     res.status(500).json({ message: 'Unable to create task' });
   }
@@ -132,7 +146,7 @@ router.put('/:id', auth, async (req, res) => {
       const targetProjectId = update.project || existing.project;
       const assigneeRecord = await store.findById('users', update.assignee);
       const targetProject = update.project ? await store.findById('projects', targetProjectId) : project;
-      if (!assigneeRecord
+      if (!assigneeRecord?.active
         || (targetProject?.owner !== update.assignee
           && !(targetProject?.members || []).map(String).includes(String(update.assignee)))) {
         return res.status(400).json({ message: 'The assignee must be a member of this project' });
@@ -140,7 +154,21 @@ router.put('/:id', auth, async (req, res) => {
     }
     const task = await store.update('tasks', req.params.id, update);
     if (!task) return res.status(404).json({ message: 'Not found' });
-    res.json(await hydrateTask(task));
+    const response = await hydrateTask(task);
+    if (update.assignee && update.assignee !== existing.assignee) {
+      try {
+        const targetProject = update.project ? await store.findById('projects', update.project) : project;
+        await queueAssignmentEmail({ kind: 'task', item: task, project: targetProject, assigneeId: update.assignee, assignedBy: req.user._id });
+        response.emailNotification = { queued: true };
+      } catch (error) {
+        console.error('Task was updated, but its assignment email could not be queued:', error.name);
+        response.emailNotification = {
+          queued: false,
+          message: 'Task saved, but the assignment email could not be queued. Check server logs.'
+        };
+      }
+    }
+    res.json(response);
   } catch (err) {
     res.status(500).json({ message: 'Unable to update task' });
   }

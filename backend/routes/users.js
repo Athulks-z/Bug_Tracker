@@ -12,6 +12,8 @@ const {
 const { isStrongPassword } = require('../utils/passwordPolicy');
 const { store, hydrateUser } = require('../services/data');
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 router.get('/', auth, async (req, res) => {
   try {
     const { available, search, role } = req.query;
@@ -57,6 +59,9 @@ router.post('/', auth, adminOnly, async (req, res) => {
   try {
     const { name, email, password, role, jobTitle, domain, phone, skills, reportingManager, assignedProjects } = req.body || {};
     if (!name || !email || !password) return res.status(400).json({ message: 'All fields required' });
+    if (typeof email !== 'string' || !EMAIL_PATTERN.test(email.trim())) {
+      return res.status(400).json({ message: 'Enter a valid email address' });
+    }
     if (!isStrongPassword(password)) return res.status(400).json({ message: 'Password must be at least 10 characters and include uppercase and lowercase letters and a number' });
     const assignedRole = role || 'employee';
     if (!ROLE_CODES.includes(assignedRole)) {
@@ -111,6 +116,9 @@ router.put('/:id', auth, adminOnly, async (req, res) => {
       return res.status(403).json({ message: 'Only a super administrator can manage a super administrator account' });
     }
     const { name, email, role, active, password, jobTitle, domain, phone, skills, reportingManager, assignedProjects } = req.body || {};
+    if (email !== undefined && (typeof email !== 'string' || !EMAIL_PATTERN.test(email.trim()))) {
+      return res.status(400).json({ message: 'Enter a valid email address' });
+    }
     if (role !== undefined && !ROLE_CODES.includes(role)) {
       return res.status(400).json({ message: 'Invalid role' });
     }

@@ -95,7 +95,11 @@ export default function Tasks() {
         ? await api.put(`/tasks/${editTask._id}`, payload)
         : await api.post('/tasks', payload);
 
-      toast.success(editTask ? 'Task updated' : 'Task created');
+      if (result.emailNotification?.queued === false) {
+        toast.error(result.emailNotification.message);
+      } else {
+        toast.success(editTask ? 'Task updated' : 'Task created');
+      }
       setShowModal(false);
       setEditTask(null);
       loadTasks();

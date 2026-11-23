@@ -110,9 +110,15 @@ export default function Issues() {
           : form;
         const updated = await api.put(`/issues/${editIssue._id}`, payload);
         setIssues(iss => iss.map(i => i._id===updated._id ? updated : i));
+        if (updated.emailNotification?.queued === false) {
+          toast.error(updated.emailNotification.message);
+        }
       } else {
         const created = await api.post('/issues', form);
         setIssues(iss => [created, ...iss]);
+        if (created.emailNotification?.queued === false) {
+          toast.error(created.emailNotification.message);
+        }
       }
       setShowModal(false);
     } catch(err) { setError(err.message); }

@@ -8,6 +8,7 @@ A bug tracker built with React, Node.js, Express, and PostgreSQL storage.
 - Five-role access control: super admin, admin, manager, employee, and trainee
 - Issue management, comments, attachments, activity, search, filters, and CSV export
 - Projects and team membership
+- Assignment emails for tasks and issues, with project stakeholders and the fixed admin address copied
 - Admin user management
 - Dashboard, reports, tasks, sprints, releases, notifications, and issue templates
 
@@ -37,6 +38,12 @@ Prerequisites: Node.js 18+ and a PostgreSQL database.
 3. In `frontend`, set `REACT_APP_API_URL=http://localhost:5000/api`, run `npm install`, and run `npm start`.
 4. Open `http://localhost:3000/register`. On an empty database, the first account becomes super admin; an imported database keeps its existing accounts.
 
+## Assignment email setup
+
+Assignment emails are sent from `zcrossingtasktracker@gmail.com` through Gmail SMTP. Set `EMAIL_SMTP_PASSWORD` in `backend/.env` to an App Password generated for that Google account (Google 2-Step Verification must be enabled); never use or commit the account's normal password. Keep the sender address fixed in the backend and do not set it from user input. Until the SMTP App Password is configured, assignment emails remain queued and the server logs a warning.
+
+Add project stakeholders in **Admin → Projects → Edit Project → Assignment Email CC**. When a task or issue is assigned or reassigned, the assignee receives the email; the selected project stakeholders and `zcrossingtasktracker@gmail.com` are copied. The email outbox retries temporary SMTP failures and records delivery state in PostgreSQL.
+
 ## Roles and project permissions
 
 | Role | Permissions |
@@ -51,7 +58,7 @@ Department-based scopes are not currently populated. Manager, employee, and trai
 
 ## Render deployment
 
-The repository includes `render.yaml`. Configure `DATABASE_URL`, `CLIENT_URL`, and `REACT_APP_API_URL` in Render. The backend runs versioned migrations before startup; use a PostgreSQL connection string available to the backend service and keep it in the platform's secret settings.
+The repository includes `render.yaml`. Configure `DATABASE_URL`, `CLIENT_URL`, `REACT_APP_API_URL`, and the Gmail `EMAIL_SMTP_PASSWORD` secret in Render. The backend runs versioned migrations before startup; use a PostgreSQL connection string available to the backend service and keep secrets in the platform's secret settings.
 
 ## Project structure
 

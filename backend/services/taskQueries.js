@@ -17,6 +17,17 @@ function listValues(value) {
     .filter(Boolean);
 }
 
+function dateOnly(value) {
+  if (!value) return '';
+  if (value instanceof Date) {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  return String(value).slice(0, 10);
+}
+
 function buildTaskWhere(user, query = {}, parameterIndex = 1) {
   const visibility = buildTaskVisibilityFilter(user, 'w', parameterIndex);
   const clauses = [visibility.clause];
@@ -105,9 +116,9 @@ function mapTask(row) {
     assignee: row.assignee_user_id || '',
     status: row.status,
     priority: row.priority || '',
-    startDate: row.start_date ? String(row.start_date).slice(0, 10) : '',
-    endDate: row.due_date ? String(row.due_date).slice(0, 10) : '',
-    dueDate: row.due_date ? String(row.due_date).slice(0, 10) : '',
+    startDate: dateOnly(row.start_date),
+    endDate: dateOnly(row.due_date),
+    dueDate: dateOnly(row.due_date),
     estimatedHours: row.estimate_hours === null ? 0 : Number(row.estimate_hours),
     rejectedBy: row.rejected_by_user_id || '',
     rejectedAt: row.rejected_at ? row.rejected_at.toISOString() : '',

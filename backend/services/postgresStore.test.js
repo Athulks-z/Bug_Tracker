@@ -103,6 +103,7 @@ test('normalized PostgreSQL store preserves unified Task CRUD and concurrent ins
     const employeeTask = await store.insert('tasks', {
       project:projectId, reporter:user._id, assignee:user._id,
       title:'Employee-visible task', status:'Rejected', type:'other',
+      startDate:'2026-11-24', endDate:'2026-11-25',
       customTypeName:'Calibration', comments:[], activity:[], timeLogs:[], attachments:[]
     });
     const traineeTask = await store.insert('tasks', {
@@ -122,6 +123,8 @@ test('normalized PostgreSQL store preserves unified Task CRUD and concurrent ins
     });
     const employeeList = await queryTasks(user, { limit:200 });
     assert.deepEqual(employeeList.items.map((item) => item._id), [employeeTask._id]);
+    assert.equal(employeeList.items[0].startDate, '2026-11-24');
+    assert.equal(employeeList.items[0].endDate, '2026-11-25');
     assert.equal(await queryTaskCounts(user), 1);
     assert.deepEqual((await queryTasks(trainee, { limit:200 })).items.map((item) => item._id), [traineeTask._id]);
     assert.equal(await queryTaskCounts(user, { statusGroup:'Rejected' }), 1);

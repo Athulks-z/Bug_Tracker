@@ -26,12 +26,19 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
-function buildAssignmentRejectedContent({ kind, title, projectName, rejectedBy, closingRemarks }) {
+function safeHeaderValue(value) {
+  return String(value || '').replace(/[\r\n\x00-\x1f\x7f]+/g, ' ').trim();
+}
+
+function buildAssignmentRejectedContent({ kind, taskKey, title, projectName, rejectedBy, closingRemarks }) {
   const itemType = 'Task';
   const safeTitle = String(title || 'Untitled').replace(/[\r\n\x00-\x1f\x7f]+/g, ' ').trim();
-  const subject = `[TaskTracker] ${itemType} rejected: ${safeTitle}`;
+  const safeTaskKey = safeHeaderValue(taskKey);
+  const identifier = safeTaskKey ? `${safeTaskKey}: ` : '';
+  const subject = `[TaskTracker] ${itemType} rejected: ${identifier}${safeTitle}`;
   const text = [
     `The assignment for this ${itemType.toLowerCase()} was rejected.`,
+    safeTaskKey ? `Task ID: ${safeTaskKey}` : '',
     `Title: ${title || 'Untitled'}`,
     `Project: ${projectName || 'Project'}`,
     `Rejected by: ${rejectedBy || 'Assigned user'}`,
@@ -41,6 +48,7 @@ function buildAssignmentRejectedContent({ kind, title, projectName, rejectedBy, 
   ].join('\n');
   const html = `<p>The assignment for this ${itemType.toLowerCase()} was rejected.</p>
     <ul>
+      ${safeTaskKey ? `<li><strong>Task ID:</strong> ${escapeHtml(safeTaskKey)}</li>` : ''}
       <li><strong>Title:</strong> ${escapeHtml(title || 'Untitled')}</li>
       <li><strong>Project:</strong> ${escapeHtml(projectName || 'Project')}</li>
       <li><strong>Rejected by:</strong> ${escapeHtml(rejectedBy || 'Assigned user')}</li>
@@ -50,17 +58,21 @@ function buildAssignmentRejectedContent({ kind, title, projectName, rejectedBy, 
   return { subject, text, html };
 }
 
-function buildTaskBlockedContent({ title, projectName, blockedBy }) {
+function buildTaskBlockedContent({ taskKey, title, projectName, blockedBy }) {
   const safeTitle = String(title || 'Untitled').replace(/[\r\n\x00-\x1f\x7f]+/g, ' ').trim();
-  const subject = `[TaskTracker] Task blocked: ${safeTitle}`;
+  const safeTaskKey = safeHeaderValue(taskKey);
+  const identifier = safeTaskKey ? `${safeTaskKey}: ` : '';
+  const subject = `[TaskTracker] Task blocked: ${identifier}${safeTitle}`;
   const text = [
     'A task has been marked as blocked.',
+    safeTaskKey ? `Task ID: ${safeTaskKey}` : '',
     `Title: ${title || 'Untitled'}`,
     `Project: ${projectName || 'Project'}`,
     `Blocked by: ${blockedBy || 'TaskTracker user'}`
   ].join('\n');
   const html = `<p>A task has been marked as blocked.</p>
     <ul>
+      ${safeTaskKey ? `<li><strong>Task ID:</strong> ${escapeHtml(safeTaskKey)}</li>` : ''}
       <li><strong>Title:</strong> ${escapeHtml(title || 'Untitled')}</li>
       <li><strong>Project:</strong> ${escapeHtml(projectName || 'Project')}</li>
       <li><strong>Blocked by:</strong> ${escapeHtml(blockedBy || 'TaskTracker user')}</li>
@@ -132,7 +144,9 @@ function buildAssignmentContent({ kind, item, project, assignedBy, clientUrl, ac
       ? (item.customTypeName ? `Other: ${item.customTypeName}` : 'Other')
       : (item.type || 'Task'));
   const safeTitle = String(item.title || '').replace(/[\r\n\x00-\x1f\x7f]+/g, ' ').trim();
-  const subject = `[TaskTracker] ${itemType} assigned: ${safeTitle || 'Untitled'}`;
+  const safeTaskKey = safeHeaderValue(item.taskKey);
+  const identifier = safeTaskKey ? `${safeTaskKey}: ` : '';
+  const subject = `[TaskTracker] ${itemType} assigned: ${identifier}${safeTitle || 'Untitled'}`;
   const projectName = project.name || project.key || 'Project';
   const dueDate = item.dueDate || item.endDate || '';
   const safeDescriptionText = sanitizeHtml(item.description || '', { allowedTags: [], allowedAttributes: {} });
@@ -147,11 +161,14 @@ function buildAssignmentContent({ kind, item, project, assignedBy, clientUrl, ac
     }
   });
   const projectQuery = project._id ? `?project=${encodeURIComponent(project._id)}` : '';
-  const resourceUrl = `${clientUrl.replace(/\/+$/, '')}/tasks${projectQuery}`;
+  const resourceUrl = item._id
+    ? `${clientUrl.replace(/\/+$/, '')}/tasks/${encodeURIComponent(item._id)}`
+    : `${clientUrl.replace(/\/+$/, '')}/tasks${projectQuery}`;
   const text = [
     `Hello ${item.assignee?.name || 'there'},`,
     '',
     `A ${itemType.toLowerCase()} has been assigned to you.`,
+    safeTaskKey ? `Task ID: ${safeTaskKey}` : '',
     `Title: ${item.title || 'Untitled'}`,
     `Type: ${typeLabel}`,
     `Project: ${projectName}${project.key ? ` (${project.key})` : ''}`,
@@ -171,6 +188,7 @@ function buildAssignmentContent({ kind, item, project, assignedBy, clientUrl, ac
   const html = `<p>Hello ${escapeHtml(item.assignee?.name || 'there')},</p>
     <p>A ${itemType.toLowerCase()} has been assigned to you.</p>
     <ul>
+      ${safeTaskKey ? `<li><strong>Task ID:</strong> ${escapeHtml(safeTaskKey)}</li>` : ''}
       <li><strong>Title:</strong> ${escapeHtml(item.title || 'Untitled')}</li>
       <li><strong>Type:</strong> ${escapeHtml(typeLabel)}</li>
       <li><strong>Project:</strong> ${escapeHtml(projectName)}${project.key ? ` (${escapeHtml(project.key)})` : ''}</li>
@@ -341,6 +359,7 @@ async function queueTaskBlockedEmail({ task, project, blockedBy }) {
   );
   const { to, cc } = buildStakeholderRecipients(stakeholderResult.rows);
   const content = buildTaskBlockedContent({
+    taskKey: task.taskKey,
     title: task.title,
     projectName: project.name || project.key,
     blockedBy

@@ -121,6 +121,7 @@ export default function TaskDetail() {
           <div>
             <span className="badge" style={{ background:'#eff6ff',color:'#1d4ed8',marginBottom:10 }}>{typeLabel}</span>
             <h1 style={{ fontSize:24 }}>{task.title}</h1>
+            {task.taskKey && <p style={{ color:'#64748b',fontSize:13,marginTop:4 }}>Task ID: {task.taskKey}</p>}
             <p style={{ color:'#64748b',marginTop:6 }}>{task.project?.name || 'No project'} · {task.status}</p>
           </div>
           {canAct && (

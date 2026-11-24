@@ -35,6 +35,8 @@ test('assignment email content escapes HTML and strips header newlines from its 
   const content = buildAssignmentContent({
     kind: 'issue',
     item: {
+      taskKey: 'SAFE-12',
+      _id: 'task-id-1',
       title: 'Bug\r\nBcc: other@example.com <script>',
       assignee: { name: '<Alice>' },
       status: 'Open'
@@ -48,10 +50,13 @@ test('assignment email content escapes HTML and strips header newlines from its 
 
   assert.equal(content.subject.includes('\r'), false);
   assert.equal(content.subject.includes('\n'), false);
+  assert.match(content.subject, /SAFE-12/);
+  assert.match(content.text, /Task ID: SAFE-12/);
+  assert.match(content.html, /<strong>Task ID:<\/strong> SAFE-12/);
   assert.match(content.html, /&lt;Alice&gt;/);
   assert.match(content.html, /&lt;Project&gt;/);
   assert.match(content.html, /&lt;Admin&gt;/);
-  assert.match(content.html, /https:\/\/tracker\.example\.com\/tasks\?project=p1/);
+  assert.match(content.html, /https:\/\/tracker\.example\.com\/tasks\/task-id-1/);
   assert.match(content.html, /Accept assignment/);
   assert.match(content.html, /Reject assignment/);
   assert.match(content.html, /accept-token/);
@@ -61,15 +66,18 @@ test('assignment email content escapes HTML and strips header newlines from its 
 test('rejection email includes the reason safely in text and HTML', () => {
   const content = buildAssignmentRejectedContent({
     kind: 'task',
+    taskKey: 'SAFE-13',
     title: 'Update <portal>',
     projectName: 'Website',
     rejectedBy: 'Athul KS',
     closingRemarks: 'Blocked <script>\nNeed access'
   });
 
-  assert.match(content.subject, /Task rejected: Update <portal>/);
+  assert.match(content.subject, /Task rejected: SAFE-13: Update <portal>/);
   assert.match(content.text, /Blocked <script>\nNeed access/);
   assert.match(content.text, /Rejected by: Athul KS/);
+  assert.match(content.text, /Task ID: SAFE-13/);
+  assert.match(content.html, /<strong>Task ID:<\/strong> SAFE-13/);
   assert.match(content.html, /Blocked &lt;script&gt;<br>Need access/);
   assert.match(content.html, /Rejected by:<\/strong> Athul KS/);
   assert.doesNotMatch(content.html, /<script>/);
@@ -77,12 +85,14 @@ test('rejection email includes the reason safely in text and HTML', () => {
 
 test('blocked-task email names the blocker and escapes task details', () => {
   const content = buildTaskBlockedContent({
+    taskKey: 'SAFE-14',
     title: 'Update <portal>',
     projectName: '<Website>',
     blockedBy: '<Alice>'
   });
 
-  assert.equal(content.subject, '[TaskTracker] Task blocked: Update <portal>');
+  assert.equal(content.subject, '[TaskTracker] Task blocked: SAFE-14: Update <portal>');
+  assert.match(content.text, /Task ID: SAFE-14/);
   assert.match(content.text, /Blocked by: <Alice>/);
   assert.match(content.html, /&lt;Website&gt;/);
   assert.match(content.html, /&lt;Alice&gt;/);

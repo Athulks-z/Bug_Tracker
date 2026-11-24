@@ -6,7 +6,7 @@ paths:
   /api/tasks:
     get:
       summary: List tasks
-      description: Employee and trainee results are restricted to tasks assigned to the authenticated user. Manager and administrator results include all tasks.
+      description: Employee and trainee results are restricted to tasks assigned to the authenticated user. Manager and administrator results include all tasks. Each task includes its stable taskKey display identifier.
       parameters:
         - in: query
           name: type
@@ -63,7 +63,7 @@ paths:
             minimum: 1
     post:
       summary: Create or assign a task
-      description: Any permitted task creator can assign the task to any active user, whether or not that user is a member of the project.
+      description: Any permitted task creator can assign the task to any active user, whether or not that user is a member of the project. The response includes a stable taskKey in PROJECTKEY-N format.
       requestBody:
         required: true
         content:
@@ -83,7 +83,7 @@ paths:
   /api/tasks/{id}:
     get:
       summary: Get task detail
-      description: Returns 404 when an employee or trainee requests a task assigned to another user.
+      description: Returns 404 when an employee or trainee requests a task assigned to another user. The response includes the stable taskKey display identifier.
     put:
       summary: Update task
       description: Permitted task editors can assign it to any active user, whether or not that user is a member of the project.
@@ -135,3 +135,18 @@ components:
           type: string
           format: date
           description: Defaults to today on the server
+    Task:
+      type: object
+      description: Task responses include the stable, human-readable project-scoped identifier.
+      properties:
+        _id:
+          type: string
+          description: Internal identifier used by existing API routes and references.
+        taskKey:
+          type: string
+          example: OPS-42
+          readOnly: true
+          description: Stable display identifier composed from the project key and a per-project sequence number.
+        taskNumber:
+          type: integer
+          readOnly: true

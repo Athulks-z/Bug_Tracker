@@ -239,7 +239,10 @@ export default function Tasks() {
               : tasks.length === 0 ? <tr><td colSpan={showTeamControls ? 9 : 8} style={{ textAlign:'center',padding:40,color:'#64748b' }}>No tasks found</td></tr>
               : tasks.map((task) => (
                 <tr key={task._id} onDoubleClick={() => navigate(`/tasks/${task._id}`)} style={{ cursor:'pointer' }}>
-                  <td onClick={() => navigate(`/tasks/${task._id}`)}><div style={{ fontWeight:600 }}>{task.title}</div></td>
+                  <td onClick={() => navigate(`/tasks/${task._id}`)}>
+                    <div style={{ fontWeight:600 }}>{task.title}</div>
+                    {task.taskKey && <small style={{ color:'#64748b' }}>{task.taskKey}</small>}
+                  </td>
                   <td><span className="badge" style={{ background:'#eff6ff',color:'#1d4ed8' }}>{typeLabel(task)}</span></td>
                   <td>{task.project?.name || '—'}</td>
                   {showTeamControls && <td>{task.assignee?.name || 'Unassigned'}</td>}

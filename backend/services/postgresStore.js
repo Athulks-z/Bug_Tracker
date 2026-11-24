@@ -184,6 +184,8 @@ async function loadRecords(client, collection) {
         .map(convert);
       return records.map((record, index) => ({
         ...record,
+        taskNumber: rows[index].task_number,
+        taskKey: rows[index].task_key,
         type: rows[index].task_type,
         taskType: rows[index].task_type,
         parentTask: rows[index].parent_task_id || '',
@@ -487,19 +489,20 @@ async function saveRecord(client, collection, record) {
         `INSERT INTO public.tasks
          (work_item_id,project_id,task_type,parent_task_id,custom_type_name,
           issue_number,severity,found_in_version,fixed_in_version,target_release_id,
-          reopened_count,resolved_at)
-         VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),$6,$7,$8,$9,NULLIF($10,''),$11,$12)
+          reopened_count,resolved_at,task_number,task_key)
+         VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),$6,$7,$8,$9,NULLIF($10,''),$11,$12,$13,$14)
          ON CONFLICT (work_item_id) DO UPDATE SET
          project_id=EXCLUDED.project_id,task_type=EXCLUDED.task_type,parent_task_id=EXCLUDED.parent_task_id,
          custom_type_name=EXCLUDED.custom_type_name,issue_number=EXCLUDED.issue_number,
          severity=EXCLUDED.severity,found_in_version=EXCLUDED.found_in_version,
          fixed_in_version=EXCLUDED.fixed_in_version,target_release_id=EXCLUDED.target_release_id,
-         reopened_count=EXCLUDED.reopened_count,resolved_at=EXCLUDED.resolved_at`,
+         reopened_count=EXCLUDED.reopened_count,resolved_at=EXCLUDED.resolved_at,
+         task_number=EXCLUDED.task_number,task_key=EXCLUDED.task_key`,
         [id, projectId, taskType, record.parentTask || '', record.customTypeName || '',
           record.issueNumber === undefined || record.issueNumber === null ? null : Number(record.issueNumber),
           record.severity || '', record.foundInVersion || '', record.fixedInVersion || '',
           record.targetRelease || '', Number(record.reopenedCount || 0),
-          timestamp(record.resolvedAt, null)]
+          timestamp(record.resolvedAt, null), Number(record.taskNumber), String(record.taskKey)]
       );
       await replaceIssueChildren(client, id, projectId, record);
     }
@@ -683,11 +686,33 @@ class PostgresStore {
           if (existing.rowCount) throw storeError('A bootstrap admin already exists', 'BOOTSTRAP_ADMIN_EXISTS');
         }
       }
+      let recordInput = input;
+      if (collection === 'tasks') {
+        const { rows: projects } = await client.query(
+          'SELECT key FROM public.projects WHERE id=$1 FOR UPDATE',
+          [String(input.project || '')]
+        );
+        if (!projects.length) throw storeError('Task project does not exist', 'PROJECT_NOT_FOUND');
+        const { rows: counters } = await client.query(
+          `INSERT INTO public.project_task_counters AS counter (project_id,last_number)
+           VALUES ($1,1)
+           ON CONFLICT (project_id) DO UPDATE
+           SET last_number=counter.last_number + 1
+           RETURNING last_number`,
+          [String(input.project)]
+        );
+        const taskNumber = counters[0].last_number;
+        recordInput = {
+          ...input,
+          taskNumber,
+          taskKey: `${String(projects[0].key).toUpperCase()}-${taskNumber}`
+        };
+      }
       const now = new Date().toISOString();
       const result = await saveRecord(client, collection, {
-        ...input,
-        _id: input._id || randomUUID().replace(/-/g, ''),
-        createdAt: input.createdAt || now,
+        ...recordInput,
+        _id: recordInput._id || randomUUID().replace(/-/g, ''),
+        createdAt: recordInput.createdAt || now,
         updatedAt: now
       });
       await client.query('COMMIT');

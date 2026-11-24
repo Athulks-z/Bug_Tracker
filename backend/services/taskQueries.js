@@ -72,6 +72,7 @@ function buildTaskWhere(user, query = {}, parameterIndex = 1) {
     clauses.push(`(
       w.title ILIKE $${parameterOffset + values.length} ESCAPE '\\'
       OR COALESCE(w.description_text, w.description_html, '') ILIKE $${parameterOffset + values.length} ESCAPE '\\'
+      OR t.task_key ILIKE $${parameterOffset + values.length} ESCAPE '\\'
       OR COALESCE(t.custom_type_name, '') ILIKE $${parameterOffset + values.length} ESCAPE '\\'
       OR COALESCE(wt.label, t.task_type) ILIKE $${parameterOffset + values.length} ESCAPE '\\'
     )`);
@@ -96,6 +97,7 @@ function taskSelectSql() {
     w.rejected_at, w.closing_remarks, w.reject_reason, w.completed_at,
     w.created_at, w.updated_at, w.sprint_id,
     t.task_type, t.custom_type_name, t.parent_task_id, t.issue_number,
+    t.task_number, t.task_key,
     t.severity, t.found_in_version, t.fixed_in_version, t.target_release_id,
     t.reopened_count, t.resolved_at,
     p.name AS project_name, p.key AS project_key,
@@ -131,6 +133,8 @@ function mapTask(row) {
     taskType: row.task_type,
     typeLabel: row.type_label || row.task_type,
     customTypeName: row.custom_type_name || '',
+    taskNumber: row.task_number,
+    taskKey: row.task_key,
     parentTask: row.parent_task_id || '',
     issueNumber: row.issue_number,
     severity: row.severity || '',
@@ -309,7 +313,7 @@ async function queryTaskDashboard(user, query = {}) {
         AND w.status NOT IN ('Completed','Closed','Rejected','Resolved')
       ORDER BY w.due_date ASC,w.id LIMIT 8`, where.values),
     pool.query(`SELECT a.id,a.work_item_id,a.action,a.details,a.created_at,
-      u.name AS actor_name,w.title AS task_title
+      u.name AS actor_name,w.title AS task_title,t.task_key
       FROM public.activity_log a
       JOIN public.work_items w ON w.id=a.work_item_id
       JOIN public.tasks t ON t.work_item_id=w.id
@@ -318,7 +322,7 @@ async function queryTaskDashboard(user, query = {}) {
       WHERE ${where.clause}
       ORDER BY a.created_at DESC LIMIT 10`, where.values),
     pool.query(`SELECT n.id,n.type,n.details,n.created_at,
-      nr.work_item_id AS task_id,w.title AS task_title
+      nr.work_item_id AS task_id,w.title AS task_title,t.task_key
       FROM public.notifications n
       JOIN public.notification_resources nr ON nr.notification_id=n.id
       JOIN public.work_items w ON w.id=nr.work_item_id
@@ -340,6 +344,7 @@ async function queryTaskDashboard(user, query = {}) {
   }
   const recentTasks = recent.items.map((task) => ({
     _id:task._id,title:task.title,status:task.status,type:task.type,
+    taskKey:task.taskKey,
     typeLabel:task.typeLabel,customTypeName:task.customTypeName,
     project:task.project,assignee:task.assignee,endDate:task.endDate
   }));
@@ -354,6 +359,7 @@ async function queryTaskDashboard(user, query = {}) {
     recentTasks,
     upcomingDeadlines:hydratedDeadlines.map((task) => ({
       _id:task._id,title:task.title,status:task.status,endDate:task.endDate,
+      taskKey:task.taskKey,
       typeLabel:task.typeLabel,project:task.project,assignee:task.assignee
     })),
     recentActivity:activity.rows,

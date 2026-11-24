@@ -34,10 +34,12 @@ async function respondToAssignment({ token, action, closingRemarks }) {
       `SELECT ar.id, ar.work_item_id, ar.assigned_user_id, ar.assignee_email_snapshot,
               ar.status AS response_status, ar.expires_at, ar.invalidated_at,
               wi.project_id, wi.kind, wi.title, wi.status AS item_status,
+              task_record.task_key,
               wi.assignee_user_id, u.name AS assignee_name,
               p.name AS project_name, p.key AS project_key
        FROM public.assignment_responses ar
        JOIN public.work_items wi ON wi.id=ar.work_item_id
+       LEFT JOIN public.tasks task_record ON task_record.work_item_id=wi.id
        LEFT JOIN public.users u ON u.id=ar.assigned_user_id
        JOIN public.projects p ON p.id=wi.project_id
        WHERE ar.token_hash=$1
@@ -148,6 +150,7 @@ async function respondToAssignment({ token, action, closingRemarks }) {
       }
       const content = buildAssignmentRejectedContent({
         kind: assignment.kind,
+        taskKey: assignment.task_key,
         title: assignment.title,
         projectName: assignment.project_name || assignment.project_key,
         rejectedBy: assignment.assignee_name || assignment.assignee_email_snapshot,

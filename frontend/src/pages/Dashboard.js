@@ -189,7 +189,7 @@ export default function Dashboard() {
                 data.recentTasks.map((task) => (
                   <button key={task._id} type="button" onClick={() => navigate(`/tasks/${task._id}`)}
                     style={{ display:'flex',justifyContent:'space-between',gap:10,width:'100%',padding:'9px 0',border:0,borderBottom:'1px solid #f1f5f9',background:'transparent',textAlign:'left',cursor:'pointer' }}>
-                    <span><strong style={{ display:'block',fontSize:13,color:'#334155' }}>{task.title}</strong><small style={{ color:'#64748b' }}>{task.typeLabel} · {task.project?.name || 'Project'}</small></span>
+                    <span><strong style={{ display:'block',fontSize:13,color:'#334155' }}>{task.title}</strong><small style={{ display:'block',color:'#64748b' }}>{task.taskKey && `${task.taskKey} · `}{task.typeLabel} · {task.project?.name || 'Project'}</small></span>
                     <span style={{ fontSize:12,color:'#64748b' }}>{task.status}</span>
                   </button>
                 ))}
@@ -199,7 +199,7 @@ export default function Dashboard() {
                 data.upcomingDeadlines.map((task) => (
                   <button key={task._id} type="button" onClick={() => navigate(`/tasks/${task._id}`)}
                     style={{ display:'flex',justifyContent:'space-between',gap:10,width:'100%',padding:'9px 0',border:0,borderBottom:'1px solid #f1f5f9',background:'transparent',textAlign:'left',cursor:'pointer' }}>
-                    <span style={{ fontSize:13,color:'#334155' }}>{task.title}<small style={{ display:'block',color:'#64748b' }}>{task.typeLabel}</small></span>
+                    <span style={{ fontSize:13,color:'#334155' }}>{task.title}<small style={{ display:'block',color:'#64748b' }}>{task.taskKey && `${task.taskKey} · `}{task.typeLabel}</small></span>
                     <time style={{ fontSize:12,color:'#64748b' }}>{task.endDate || '—'}</time>
                   </button>
                 ))}
@@ -213,7 +213,7 @@ export default function Dashboard() {
                 data.recentActivity.map((item) => (
                   <button key={item.id} type="button" onClick={() => navigate(`/tasks/${item.work_item_id}`)}
                     style={{ display:'block',width:'100%',padding:'8px 0',border:0,borderBottom:'1px solid #f1f5f9',background:'transparent',textAlign:'left',cursor:'pointer' }}>
-                    <span style={{ display:'block',fontSize:13,color:'#334155' }}>{item.actor_name || 'A user'} {item.action} {item.task_title}</span>
+                    <span style={{ display:'block',fontSize:13,color:'#334155' }}>{item.actor_name || 'A user'} {item.action} {item.task_key ? `${item.task_key} · ` : ''}{item.task_title}</span>
                     <time style={{ fontSize:11,color:'#94a3b8' }}>{new Date(item.created_at).toLocaleString()}</time>
                   </button>
                 ))}
@@ -223,7 +223,7 @@ export default function Dashboard() {
                 data.notifications.map((item) => (
                   <button key={item.id} type="button" onClick={() => navigate(`/tasks/${item.task_id}`)}
                     style={{ display:'block',width:'100%',padding:'8px 0',border:0,borderBottom:'1px solid #f1f5f9',background:'transparent',textAlign:'left',cursor:'pointer' }}>
-                    <span style={{ display:'block',fontSize:13,color:'#334155' }}>{item.task_title}</span>
+                    <span style={{ display:'block',fontSize:13,color:'#334155' }}>{item.task_key && `${item.task_key} · `}{item.task_title}</span>
                     <span style={{ display:'block',fontSize:12,color:'#64748b' }}>{item.details || item.type}</span>
                     <time style={{ fontSize:11,color:'#94a3b8' }}>{new Date(item.created_at).toLocaleString()}</time>
                   </button>

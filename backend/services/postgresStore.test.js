@@ -99,6 +99,15 @@ test('normalized PostgreSQL store preserves unified Task CRUD and concurrent ins
       attachments: []
     })));
     recordIds.tasks.push(...tasks.map((task) => task._id));
+    const taskKeys = tasks.map((task) => task.taskKey);
+    assert.equal(new Set(taskKeys).size, tasks.length);
+    const projectKey = `PG${suffix.slice(0, 8)}`;
+    assert.deepEqual(
+      taskKeys.slice().sort((left, right) => Number(left.split('-').pop()) - Number(right.split('-').pop())),
+      Array.from({ length: 5 }, (_, index) => `${projectKey.toUpperCase()}-${index + 1}`)
+    );
+    const updatedTask = await store.update('tasks', tasks[0]._id, { title:'Updated concurrency task' });
+    assert.equal(updatedTask.taskKey, tasks[0].taskKey);
 
     const employeeTask = await store.insert('tasks', {
       project:projectId, reporter:user._id, assignee:user._id,
@@ -106,6 +115,7 @@ test('normalized PostgreSQL store preserves unified Task CRUD and concurrent ins
       startDate:'2026-11-24', endDate:'2026-11-25',
       customTypeName:'Calibration', comments:[], activity:[], timeLogs:[], attachments:[]
     });
+    assert.equal(employeeTask.taskKey, `${projectKey.toUpperCase()}-6`);
     const traineeTask = await store.insert('tasks', {
       project:projectId, reporter:user._id, assignee:trainee._id,
       title:'Trainee-private task', status:'Rejected', type:'bug',
@@ -125,6 +135,11 @@ test('normalized PostgreSQL store preserves unified Task CRUD and concurrent ins
     assert.deepEqual(employeeList.items.map((item) => item._id), [employeeTask._id]);
     assert.equal(employeeList.items[0].startDate, '2026-11-24');
     assert.equal(employeeList.items[0].endDate, '2026-11-25');
+    assert.equal(employeeList.items[0].taskKey, employeeTask.taskKey);
+    assert.deepEqual(
+      (await queryTasks(user, { search:employeeTask.taskKey })).items.map((item) => item._id),
+      [employeeTask._id]
+    );
     assert.equal(await queryTaskCounts(user), 1);
     assert.deepEqual((await queryTasks(trainee, { limit:200 })).items.map((item) => item._id), [traineeTask._id]);
     assert.equal(await queryTaskCounts(user, { statusGroup:'Rejected' }), 1);
@@ -134,7 +149,7 @@ test('normalized PostgreSQL store preserves unified Task CRUD and concurrent ins
     );
     assert.equal((await queryTasks(user, { search:'Trainee-private' })).total, 0);
     assert.equal(await findVisibleTask(user, traineeTask._id), null);
-    assert.equal((await findVisibleTask(manager, traineeTask._id))._id, traineeTask._id);
+    assert.equal((await findVisibleTask(manager, traineeTask._id)).taskKey, traineeTask.taskKey);
     assert.equal(await findVisibleAttachment(user, `visibility-attachment-${suffix}`), null);
     assert.equal((await findVisibleAttachment(trainee, `visibility-attachment-${suffix}`)).filename, 'private.txt');
 

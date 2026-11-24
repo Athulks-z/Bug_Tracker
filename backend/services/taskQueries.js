@@ -2,6 +2,7 @@ const pool = require('../config/db');
 const { buildTaskVisibilityFilter } = require('../middleware/taskVisibility');
 const { isAdministrator, isManager } = require('../middleware/roles');
 const { hydrateTask } = require('./data');
+const { dateOnly } = require('../utils/dateOnly');
 
 const STATUS_GROUPS = ['Open','In Progress','Completed/Closed','Rejected'];
 const STATUS_GROUP_EXPRESSION = `CASE
@@ -17,20 +18,9 @@ function listValues(value) {
     .filter(Boolean);
 }
 
-function dateOnly(value) {
-  if (!value) return '';
-  if (value instanceof Date) {
-    const year = value.getFullYear();
-    const month = String(value.getMonth() + 1).padStart(2, '0');
-    const day = String(value.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-  return String(value).slice(0, 10);
-}
-
 function buildTaskWhere(user, query = {}, parameterIndex = 1) {
   const visibility = buildTaskVisibilityFilter(user, 'w', parameterIndex);
-  const clauses = [visibility.clause];
+  const clauses = [visibility.clause, 't.is_backlog=false'];
   const values = [...visibility.values];
   const parameterOffset = parameterIndex - 1;
   const add = (clause, value) => {
@@ -95,9 +85,10 @@ function taskSelectSql() {
     w.reporter_user_id, w.assignee_user_id, w.status, w.priority,
     w.start_date, w.due_date, w.estimate_hours, w.rejected_by_user_id,
     w.rejected_at, w.closing_remarks, w.reject_reason, w.completed_at,
-    w.created_at, w.updated_at, w.sprint_id,
+    w.created_at, w.updated_at, w.sprint_id, w.milestone_id,
     t.task_type, t.custom_type_name, t.parent_task_id, t.issue_number,
     t.task_number, t.task_key,
+    t.is_backlog,
     t.severity, t.found_in_version, t.fixed_in_version, t.target_release_id,
     t.reopened_count, t.resolved_at,
     p.name AS project_name, p.key AS project_key,
@@ -135,6 +126,8 @@ function mapTask(row) {
     customTypeName: row.custom_type_name || '',
     taskNumber: row.task_number,
     taskKey: row.task_key,
+    milestone: row.milestone_id || '',
+    isBacklog: Boolean(row.is_backlog),
     parentTask: row.parent_task_id || '',
     issueNumber: row.issue_number,
     severity: row.severity || '',
@@ -264,6 +257,7 @@ async function queryBusyTaskAssigneeIds(user) {
      JOIN public.tasks t ON t.work_item_id=w.id
      WHERE ${visibility.clause}
        AND w.assignee_user_id IS NOT NULL
+       AND t.is_backlog=false
        AND w.status <> 'Completed'`,
     visibility.values
   );
@@ -370,6 +364,10 @@ async function queryTaskDashboard(user, query = {}) {
 
 module.exports = {
   STATUS_GROUPS,
+  STATUS_GROUP_EXPRESSION,
+  taskSelectSql,
+  mapTask,
+  addTaskChildren,
   buildTaskWhere,
   queryTasks,
   findVisibleTask,

@@ -11,6 +11,7 @@ const {
   findVisibleTask,
   findVisibleAttachment
 } = require('./taskQueries');
+const { listProjectBacklog } = require('./projectQueries');
 
 test('normalized PostgreSQL store preserves unified Task CRUD and concurrent inserts', async () => {
   const store = new PostgresStore();
@@ -67,10 +68,19 @@ test('normalized PostgreSQL store preserves unified Task CRUD and concurrent ins
       name: 'PostgreSQL Store Test Project',
       key: `PG${suffix.slice(0, 8)}`,
       owner: user._id,
+      createdBy:manager._id,
       members: [user._id],
-      status: 'active'
+      status: 'active',
+      priority:'High',
+      startDate:'2026-11-24',
+      targetEndDate:'2026-12-24'
     });
-    assert.deepEqual((await store.findById('projects', projectId)).members, [user._id]);
+    const savedProject = await store.findById('projects', projectId);
+    assert.deepEqual(savedProject.members, [user._id]);
+    assert.equal(savedProject.createdBy, manager._id);
+    assert.equal(savedProject.priority, 'High');
+    assert.equal(savedProject.startDate, '2026-11-24');
+    assert.equal(savedProject.targetEndDate, '2026-12-24');
     assert.deepEqual((await store.findById('users', user._id)).assignedProjects, [projectId]);
     const sprint = await store.insert('sprints', {
       project: projectId,
@@ -122,6 +132,15 @@ test('normalized PostgreSQL store preserves unified Task CRUD and concurrent ins
       comments:[], activity:[], timeLogs:[], attachments:[]
     });
     recordIds.tasks.push(employeeTask._id, traineeTask._id);
+    const backlogTask = await store.insert('tasks', {
+      project:projectId, reporter:user._id, title:'Project backlog test',
+      status:'Backlog', type:'task', isBacklog:true,
+      comments:[], activity:[], timeLogs:[], attachments:[]
+    });
+    recordIds.tasks.push(backlogTask._id);
+    const projectBacklog = await listProjectBacklog(user, projectId);
+    assert.deepEqual(projectBacklog.map((item) => item._id), [backlogTask._id]);
+    assert.equal((await store.findById('tasks', backlogTask._id)).isBacklog, true);
     await store.update('tasks', traineeTask._id, {
       attachments:[{
         _id:`visibility-attachment-${suffix}`,

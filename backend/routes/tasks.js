@@ -8,6 +8,7 @@ const { buildTaskVisibilityFilter } = require('../middleware/taskVisibility');
 const {
   canReadProject,
   canCreateWorkItem,
+  canCreateBacklog,
   canUpdateWorkItem,
   canManageProject
 } = require('../middleware/roles');
@@ -86,7 +87,7 @@ router.get('/stats/summary', auth, async (req, res) => {
       `SELECT w.status AS _id, count(*)::int AS count
        FROM public.work_items w
        JOIN public.tasks t ON t.work_item_id=w.id
-       WHERE ${visibility.clause}
+       WHERE ${visibility.clause} AND t.is_backlog=false
        GROUP BY w.status ORDER BY count DESC`,
       visibility.values
     );
@@ -187,14 +188,19 @@ router.get('/:id', auth, async (req, res) => {
 router.post('/', auth, async (req, res) => {
   try {
     const { title, description, type, customTypeName, project, assignee, status, priority, startDate, endDate,
-      severity, foundInVersion, fixedInVersion, targetRelease, sprint, estimatedHours } = req.body || {};
+      severity, foundInVersion, fixedInVersion, targetRelease, sprint, estimatedHours, milestone,
+      mode } = req.body || {};
+    if (mode !== undefined && !['task','backlog'].includes(mode)) {
+      return res.status(400).json({ message:'Mode must be task or backlog' });
+    }
+    const isBacklog = mode === 'backlog';
     if (!title || !project) return res.status(400).json({ message: 'Title and project required' });
     const validatedType = await validateTaskType(type, customTypeName);
     const projectRecord = await store.findById('projects', project);
-    if (!canCreateWorkItem(req.user, projectRecord)) {
+    if (isBacklog ? !canCreateBacklog(req.user, projectRecord) : !canCreateWorkItem(req.user, projectRecord)) {
       return res.status(403).json({ message: 'You cannot create tasks in this project' });
     }
-    if (!['super_admin', 'admin', 'manager', 'employee'].includes(req.user.role)) {
+    if (!isBacklog && !['super_admin', 'admin', 'manager', 'employee'].includes(req.user.role)) {
       return res.status(403).json({ message: 'Your role is read-only' });
     }
     if (assignee) {
@@ -203,19 +209,27 @@ router.post('/', auth, async (req, res) => {
         return res.status(400).json({ message: 'The assignee must be an active user' });
       }
     }
+    if (milestone) {
+      const { rowCount } = await pool.query(
+        'SELECT 1 FROM public.milestones WHERE id=$1 AND project_id=$2',
+        [String(milestone), String(project)]
+      );
+      if (!rowCount) return res.status(400).json({ message:'Milestone must belong to this project' });
+    }
     const task = await store.insert('tasks', {
       title, description: sanitizeTaskDescription(description), project, reporter: req.user._id,
-      assignee: assignee || '', status: status || 'To do', priority: priority || 'Medium',
+      assignee: assignee || '', status: isBacklog ? 'Backlog' : (status || 'To do'), priority: priority || 'Medium',
       type: validatedType.typeValue, customTypeName: validatedType.customTypeName,
-      startDate: startDateOrToday(startDate),
+      startDate: isBacklog ? (startDate || '') : startDateOrToday(startDate),
       endDate: endDate || '', severity: severity || '', foundInVersion: foundInVersion || '',
       fixedInVersion: fixedInVersion || '', targetRelease: targetRelease || '',
-      sprint: sprint || '', estimatedHours: estimatedHours || 0, attachments: [],
+      sprint: sprint || '', milestone:milestone || '', estimatedHours: estimatedHours || 0,
+      isBacklog, attachments: [],
       comments: [], activity: [{ user: req.user._id, action: 'created', details: `Task created by ${req.user.name || req.user._id}`, createdAt: new Date().toISOString() }],
       timeLogs: [], reopenedCount: 0
     });
     const response = await hydrateTask(task);
-    if (assignee) {
+    if (assignee && !isBacklog) {
       try {
         const queued = await queueAssignmentEmail({ kind: 'task', item: task, project: projectRecord, assigneeId: assignee, assignedBy: req.user._id });
         response.emailNotification = {
@@ -230,7 +244,7 @@ router.post('/', auth, async (req, res) => {
         };
       }
     }
-    if (task.status === 'Blocked') {
+    if (!isBacklog && task.status === 'Blocked') {
       await addBlockedEmailNotification(response, task, projectRecord, req.user);
     }
     res.status(201).json(response);
@@ -248,8 +262,8 @@ router.put('/:id', auth, async (req, res) => {
       return res.status(403).json({ message: 'You cannot update this task' });
     }
     const update = {};
-    const employeeFields = ['title', 'description', 'assignee', 'status', 'priority', 'startDate', 'endDate'];
-    const managerFields = ['title', 'description', 'type', 'customTypeName', 'project', 'assignee', 'status', 'priority', 'startDate', 'endDate', 'severity', 'foundInVersion', 'fixedInVersion', 'targetRelease', 'sprint', 'estimatedHours'];
+    const employeeFields = ['title', 'description', 'assignee', 'status', 'priority', 'startDate', 'endDate', 'milestone'];
+    const managerFields = ['title', 'description', 'type', 'customTypeName', 'project', 'assignee', 'status', 'priority', 'startDate', 'endDate', 'severity', 'foundInVersion', 'fixedInVersion', 'targetRelease', 'sprint', 'estimatedHours', 'milestone'];
     const allowedFields = req.user.role === 'employee'
       ? employeeFields
       : managerFields;
@@ -279,6 +293,14 @@ router.put('/:id', auth, async (req, res) => {
       if (!canReadProject(req.user, targetProject)) {
         return res.status(403).json({ message: 'You cannot move a task to that project' });
       }
+    }
+    if (update.milestone) {
+      const milestoneProject = update.project || existing.project;
+      const { rowCount } = await pool.query(
+        'SELECT 1 FROM public.milestones WHERE id=$1 AND project_id=$2',
+        [String(update.milestone), String(milestoneProject)]
+      );
+      if (!rowCount) return res.status(400).json({ message:'Milestone must belong to this project' });
     }
     if (update.assignee) {
       const assigneeRecord = await store.findById('users', update.assignee);

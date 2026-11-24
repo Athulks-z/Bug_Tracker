@@ -13,7 +13,7 @@ async function validateProjectStakeholders(userIds) {
 
 async function getProjectStakeholders(projectId) {
   const { rows } = await pool.query(
-    `SELECT u.id AS "_id", u.name, u.email
+    `SELECT u.id AS "_id", u.name, u.email, u.avatar
      FROM public.project_stakeholders ps
      JOIN public.users u ON u.id = ps.user_id
      WHERE ps.project_id = $1 AND u.active

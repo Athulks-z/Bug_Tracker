@@ -8,6 +8,8 @@ import Tasks from './pages/Tasks';
 import TaskDetail from './pages/TaskDetail';
 import AdminUsers from './pages/AdminUsers';
 import AdminProjects from './pages/AdminProjects';
+import Projects from './pages/Projects';
+import ProjectDetail from './pages/ProjectDetail';
 import Sprints from './pages/Sprints';
 import Releases from './pages/Releases';
 import Profile from './pages/Profile';
@@ -54,6 +56,8 @@ export default function App() {
             <Route index element={<Dashboard />} />
             <Route path="tasks" element={<Tasks />} />
             <Route path="tasks/:id" element={<TaskDetail />} />
+            <Route path="projects" element={<Projects />} />
+            <Route path="projects/:id" element={<ProjectDetail />} />
             <Route path="issues" element={<LegacyIssueRedirect />} />
             <Route path="issues/*" element={<LegacyIssueRedirect />} />
             <Route path="profile" element={<Profile />} />

@@ -32,11 +32,16 @@ const req = async (method, path, body, params, responseType = 'json') => {
     throw new Error(data.message || 'Request failed');
   }
   if (responseType === 'blob') return res.blob();
-  return res.json();
+  const data = await res.json();
+  if (responseType === 'meta') {
+    return { data, total:Number(res.headers.get('X-Total-Count') || data.length || 0) };
+  }
+  return data;
 };
 
 export default {
   get: (p, params) => req('GET', p, undefined, params),
+  getWithMeta: (p, params) => req('GET', p, undefined, params, 'meta'),
   post: (p, b) => req('POST', p, b),
   put: (p, b) => req('PUT', p, b),
   delete: (p) => req('DELETE', p),

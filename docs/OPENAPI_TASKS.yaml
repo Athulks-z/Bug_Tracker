@@ -3,6 +3,69 @@ info:
   title: TaskTracker Unified Tasks API
   version: 2.0.0
 paths:
+  /api/projects:
+    get:
+      summary: List projects visible to the authenticated user
+      description: Managers and administrators see all projects. Other roles see projects where they are owner, active member, or stakeholder. Filtering and pagination are applied in the database query.
+      parameters:
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+    post:
+      summary: Create a project with milestones
+      description: Administrator access is required. The selected owner is automatically included as a project member.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectInput'
+  /api/projects/{id}:
+    get:
+      summary: Get visible project details and progress
+      description: Returns project metadata, ordered milestone progress, visible task distribution, and project backlog. Progress excludes backlog and Rejected tasks.
+    put:
+      summary: Update project metadata and milestones
+  /api/projects/{id}/backlog:
+    get:
+      summary: List backlog items for a visible project
+  /api/projects/{id}/backlog/{taskId}/move:
+    post:
+      summary: Move a backlog item to active Tasks
+      description: Requires an assignee, start date, and due date. The move is recorded before assignment email is queued.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assignee, startDate, dueDate]
+              properties:
+                assignee:
+                  type: string
+                startDate:
+                  type: string
+                  format: date
+                dueDate:
+                  type: string
+                  format: date
+                milestone:
+                  type: string
+                  nullable: true
+                estimatedHours:
+                  type: number
+                  minimum: 0
   /api/tasks:
     get:
       summary: List tasks
@@ -135,6 +198,13 @@ components:
           type: string
           format: date
           description: Defaults to today on the server
+        milestone:
+          type: string
+          nullable: true
+        mode:
+          type: string
+          enum: [task, backlog]
+          description: backlog explicitly creates a backlog item and suppresses assignment notifications
     Task:
       type: object
       description: Task responses include the stable, human-readable project-scoped identifier.
@@ -150,3 +220,62 @@ components:
         taskNumber:
           type: integer
           readOnly: true
+        isBacklog:
+          type: boolean
+          readOnly: true
+    ProjectInput:
+      type: object
+      required: [name, key, owner, status, priority, members, stakeholders, milestones]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        key:
+          type: string
+        owner:
+          type: string
+          description: Active user ID; owner is automatically a project member.
+        status:
+          type: string
+          enum: [planning, active, in_progress, on_hold, completed, cancelled]
+          description: active is retained as the stored status for In Progress.
+        priority:
+          type: string
+          enum: [High, Medium, Low]
+        startDate:
+          type: string
+          format: date
+          nullable: true
+        targetEndDate:
+          type: string
+          format: date
+          nullable: true
+        members:
+          type: array
+          items:
+            type: string
+        stakeholders:
+          type: array
+          items:
+            type: string
+        milestones:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            type: object
+            required: [name]
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+                maxLength: 100
+              dueDate:
+                type: string
+                format: date
+                nullable: true
+              owner:
+                type: string
+                nullable: true

@@ -6,6 +6,7 @@ const {
   canReadProject,
   canManageProject,
   canCreateWorkItem,
+  canCreateBacklog,
   canUpdateWorkItem
 } = require('./roles');
 
@@ -35,10 +36,14 @@ test('project access and work item permissions follow the approved role matrix',
   assert.equal(canReadProject(outsider, project), false);
 
   assert.equal(canManageProject(manager, project), true);
+  assert.equal(canManageProject({ ...manager, _id:'manager' }, { ...project, members:[{ _id:'manager' }] }), true);
   assert.equal(canManageProject(employee, project), false);
   assert.equal(canCreateWorkItem(manager, project), true);
   assert.equal(canCreateWorkItem(employee, project), true);
   assert.equal(canCreateWorkItem(trainee, project), false);
+  assert.equal(canCreateBacklog(manager, project), true);
+  assert.equal(canCreateBacklog(employee, project), true);
+  assert.equal(canCreateBacklog(trainee, project), false);
 
   assert.equal(canUpdateWorkItem(employee, issue, project), true);
   assert.equal(canUpdateWorkItem({ ...employee, _id: 'assignee' }, issue, project), true);

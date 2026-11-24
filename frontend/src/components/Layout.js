@@ -34,6 +34,7 @@ export default function Layout() {
           {[
             { to:'/', icon:'ti-layout-dashboard', label:'Dashboard' },
             { to:'/tasks', icon:'ti-list-check', label:'Tasks' },
+            { to:'/projects', icon:'ti-folder', label:'Projects' },
             { to:'/profile', icon:'ti-id', label:'Profile' },
           ].map(item => (
             <NavLink key={item.to} to={item.to} end={item.to==='/'} style={({ isActive }) => navStyle(isActive)}>

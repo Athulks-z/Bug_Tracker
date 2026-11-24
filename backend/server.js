@@ -17,6 +17,7 @@ app.use(cors({
         if (!origin || config.clientOrigins.includes(origin)) return callback(null, true);
         return callback(new Error('Origin not allowed by CORS'));
     },
+    exposedHeaders: ['X-Total-Count'],
     credentials: true
 }));
 

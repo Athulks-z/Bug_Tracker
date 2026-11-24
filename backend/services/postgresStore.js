@@ -1,5 +1,6 @@
 const { randomUUID } = require('crypto');
 const pool = require('../config/db');
+const { dateOnly } = require('../utils/dateOnly');
 
 const COLLECTIONS = new Set([
   'users',
@@ -47,8 +48,7 @@ function dateValue(value) {
 }
 
 function dateOutput(value) {
-  if (!value) return '';
-  return value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
+  return dateOnly(value);
 }
 
 function roleCode(role, bootstrapAdmin) {
@@ -118,10 +118,18 @@ async function loadRecords(client, collection) {
     const members = await client.query(
       'SELECT project_id, user_id FROM public.project_members WHERE active ORDER BY project_id, user_id'
     );
+    const stakeholders = await client.query(
+      'SELECT project_id,user_id FROM public.project_stakeholders ORDER BY project_id,user_id'
+    );
     const membersByProject = new Map();
+    const stakeholdersByProject = new Map();
     for (const row of members.rows) {
       if (!membersByProject.has(row.project_id)) membersByProject.set(row.project_id, []);
       membersByProject.get(row.project_id).push(row.user_id);
+    }
+    for (const row of stakeholders.rows) {
+      if (!stakeholdersByProject.has(row.project_id)) stakeholdersByProject.set(row.project_id, []);
+      stakeholdersByProject.get(row.project_id).push(row.user_id);
     }
     return rows.map((row) => ({
       _id: row.id,
@@ -130,7 +138,12 @@ async function loadRecords(client, collection) {
       prefix: row.key,
       description: row.description_text ?? row.description_html ?? '',
       owner: row.owner_user_id,
+      createdBy: row.created_by_user_id,
+      priority: row.priority,
+      startDate: dateOutput(row.start_date),
+      targetEndDate: dateOutput(row.target_end_date),
       members: membersByProject.get(row.id) || [],
+      stakeholders: stakeholdersByProject.get(row.id) || [],
       status: row.status,
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString()
@@ -191,6 +204,8 @@ async function loadRecords(client, collection) {
         parentTask: rows[index].parent_task_id || '',
         customTypeName: rows[index].custom_type_name || '',
         issueNumber: rows[index].issue_number,
+        milestone: rows[index].milestone_id || '',
+        isBacklog: Boolean(rows[index].is_backlog),
         severity: rows[index].severity || '',
         foundInVersion: rows[index].found_in_version || '',
         fixedInVersion: rows[index].fixed_in_version || '',
@@ -420,16 +435,20 @@ async function saveRecord(client, collection, record) {
     const key = String(record.key || record.prefix || '').trim().toUpperCase();
     if (!record.name || !key) throw new TypeError('Projects require a name and key');
     await client.query(
-      `INSERT INTO public.projects (id,name,key,description_text,owner_user_id,status,created_at,updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      `INSERT INTO public.projects
+       (id,name,key,description_text,owner_user_id,created_by_user_id,status,priority,start_date,target_end_date,created_at,updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name,key=EXCLUDED.key,
         description_text=EXCLUDED.description_text,owner_user_id=EXCLUDED.owner_user_id,
-        status=EXCLUDED.status,updated_at=EXCLUDED.updated_at`,
+        status=EXCLUDED.status,priority=EXCLUDED.priority,start_date=EXCLUDED.start_date,
+        target_end_date=EXCLUDED.target_end_date,updated_at=EXCLUDED.updated_at`,
       [id, record.name, key,
-        record.description || '', record.owner || '', status, createdAt, updatedAt]
+        record.description || '', record.owner || '', record.createdBy || record.owner || '',
+        status, record.priority || 'Medium', dateValue(record.startDate),
+        dateValue(record.targetEndDate), createdAt, updatedAt]
     );
     await client.query('DELETE FROM public.project_members WHERE project_id = $1', [id]);
-    const members = [...new Set(arrayValue(record.members, 'members').map(String))];
+    const members = [...new Set([...arrayValue(record.members, 'members').map(String), String(record.owner || '')].filter(Boolean))];
     for (const userId of members) {
       await client.query(
         `INSERT INTO public.project_members (project_id,user_id,project_role)
@@ -437,7 +456,11 @@ async function saveRecord(client, collection, record) {
         [id, userId, record.owner || '']
       );
     }
-    return { ...record, _id: id, status, createdAt: createdAt.toISOString(), updatedAt: updatedAt.toISOString() };
+    return {
+      ...record, _id:id, status, priority:record.priority || 'Medium',
+      createdBy:record.createdBy || record.owner || '',
+      members, createdAt:createdAt.toISOString(), updatedAt:updatedAt.toISOString()
+    };
   }
 
   if (collection === 'issues' || collection === 'tasks') {
@@ -457,17 +480,17 @@ async function saveRecord(client, collection, record) {
     }
     await client.query(
       `INSERT INTO public.work_items
-       (id,project_id,kind,title,description_text,reporter_user_id,assignee_user_id,status,priority,start_date,due_date,estimate_hours,sprint_id,created_at,updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,''),$8,NULLIF($9,''),$10,$11,NULLIF($12,0),NULLIF($13,''),$14,$15)
+       (id,project_id,kind,title,description_text,reporter_user_id,assignee_user_id,status,priority,start_date,due_date,estimate_hours,sprint_id,milestone_id,created_at,updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,''),$8,NULLIF($9,''),$10,$11,NULLIF($12,0),NULLIF($13,''),NULLIF($14,''),$15,$16)
        ON CONFLICT (id) DO UPDATE SET project_id=EXCLUDED.project_id,title=EXCLUDED.title,
        description_text=EXCLUDED.description_text,reporter_user_id=EXCLUDED.reporter_user_id,
        assignee_user_id=EXCLUDED.assignee_user_id,status=EXCLUDED.status,priority=EXCLUDED.priority,
-       start_date=EXCLUDED.start_date,due_date=EXCLUDED.due_date,estimate_hours=EXCLUDED.estimate_hours,sprint_id=EXCLUDED.sprint_id,
+       start_date=EXCLUDED.start_date,due_date=EXCLUDED.due_date,estimate_hours=EXCLUDED.estimate_hours,sprint_id=EXCLUDED.sprint_id,milestone_id=EXCLUDED.milestone_id,
        updated_at=EXCLUDED.updated_at`,
       [id, projectId, kind, record.title || '', record.description || '', reporterId, assigneeId,
         record.status || 'To do', record.priority || '', dateValue(record.startDate),
         dateValue(record.dueDate || record.endDate), Number(record.estimatedHours || 0),
-        record.sprint || '', createdAt, updatedAt]
+        record.sprint || '', record.milestone || '', createdAt, updatedAt]
     );
     if (collection === 'issues') {
       await client.query(
@@ -489,20 +512,20 @@ async function saveRecord(client, collection, record) {
         `INSERT INTO public.tasks
          (work_item_id,project_id,task_type,parent_task_id,custom_type_name,
           issue_number,severity,found_in_version,fixed_in_version,target_release_id,
-          reopened_count,resolved_at,task_number,task_key)
-         VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),$6,$7,$8,$9,NULLIF($10,''),$11,$12,$13,$14)
+          reopened_count,resolved_at,task_number,task_key,is_backlog)
+         VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),$6,$7,$8,$9,NULLIF($10,''),$11,$12,$13,$14,$15)
          ON CONFLICT (work_item_id) DO UPDATE SET
          project_id=EXCLUDED.project_id,task_type=EXCLUDED.task_type,parent_task_id=EXCLUDED.parent_task_id,
          custom_type_name=EXCLUDED.custom_type_name,issue_number=EXCLUDED.issue_number,
          severity=EXCLUDED.severity,found_in_version=EXCLUDED.found_in_version,
          fixed_in_version=EXCLUDED.fixed_in_version,target_release_id=EXCLUDED.target_release_id,
          reopened_count=EXCLUDED.reopened_count,resolved_at=EXCLUDED.resolved_at,
-         task_number=EXCLUDED.task_number,task_key=EXCLUDED.task_key`,
+         task_number=EXCLUDED.task_number,task_key=EXCLUDED.task_key,is_backlog=EXCLUDED.is_backlog`,
         [id, projectId, taskType, record.parentTask || '', record.customTypeName || '',
           record.issueNumber === undefined || record.issueNumber === null ? null : Number(record.issueNumber),
           record.severity || '', record.foundInVersion || '', record.fixedInVersion || '',
           record.targetRelease || '', Number(record.reopenedCount || 0),
-          timestamp(record.resolvedAt, null), Number(record.taskNumber), String(record.taskKey)]
+          timestamp(record.resolvedAt, null), Number(record.taskNumber), String(record.taskKey), Boolean(record.isBacklog)]
       );
       await replaceIssueChildren(client, id, projectId, record);
     }

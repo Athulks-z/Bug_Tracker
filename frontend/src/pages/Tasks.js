@@ -17,10 +17,13 @@ export default function Tasks() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
+  const [backlogMode] = useState(searchParams.get('mode') === 'backlog')
+  const [backlogProjectId] = useState(searchParams.get('project') || '')
   const [tasks, setTasks] = useState([])
   const [projects, setProjects] = useState([])
   const [users, setUsers] = useState([])
   const [types, setTypes] = useState([])
+  const [projectMilestones, setProjectMilestones] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editTask, setEditTask] = useState(null)
@@ -42,7 +45,7 @@ export default function Tasks() {
     type: searchParams.getAll('type')
   })
   const [form, setForm] = useState({
-    title:'', description:'', type:'', customTypeName:'', project:'',
+    title:'', description:'', type:'', customTypeName:'', project:'',milestone:'',
     assignee:'', status:'To do', priority:'Medium', startDate:'', endDate:'',
     severity:'', foundInVersion:'', fixedInVersion:'', targetRelease:'', sprint:'', estimatedHours:''
   })
@@ -69,7 +72,25 @@ export default function Tasks() {
   }, [loadTasks])
 
   useEffect(() => {
-    api.get('/projects').then(setProjects).catch(() => {})
+    if (!backlogMode || !backlogProjectId) return
+    setForm((current) => ({ ...current,project:backlogProjectId,startDate:'',endDate:'' }))
+    setShowModal(true)
+  }, [backlogMode, backlogProjectId])
+
+  useEffect(() => {
+    if (!form.project) {
+      setProjectMilestones([])
+      return
+    }
+    let active = true
+    api.get(`/projects/${form.project}`)
+      .then((project) => { if (active) setProjectMilestones(project.milestones || []) })
+      .catch((error) => { if (active) toast.error(error.message) })
+    return () => { active = false }
+  }, [form.project])
+
+  useEffect(() => {
+    api.get('/projects').then(setProjects).catch((error) => toast.error(error.message))
     api.get('/users', { taskAssignees:true }).then(setUsers).catch(() => {})
     api.get('/tasks/types').then(setTypes).catch(() => {})
   }, [])
@@ -91,8 +112,8 @@ export default function Tasks() {
     setEditTask(null)
     setPendingFiles([])
     setForm({
-      title:'', description:'', type:'', customTypeName:'', project:'',
-      assignee:'', status:'To do', priority:'Medium', startDate:today(), endDate:'',
+      title:'', description:'', type:'', customTypeName:'', project:backlogMode ? backlogProjectId : '',milestone:'',
+      assignee:'', status:'To do', priority:'Medium', startDate:backlogMode ? '' : today(), endDate:'',
       severity:'', foundInVersion:'', fixedInVersion:'', targetRelease:'', sprint:'', estimatedHours:''
     })
     setShowModal(true)
@@ -104,6 +125,7 @@ export default function Tasks() {
     setForm({
       title:task.title || '', description:task.description || '', type:task.type || '',
       customTypeName:task.customTypeName || '', project:task.project?._id || task.project || '',
+      milestone:task.milestone || '',
       assignee:task.assignee?._id || task.assignee || '', status:task.status || 'To do',
       priority:task.priority || 'Medium', startDate:task.startDate ? task.startDate.slice(0,10) : today(),
       endDate:task.endDate ? task.endDate.slice(0,10) : '', severity:task.severity || '',
@@ -148,7 +170,8 @@ export default function Tasks() {
     setSaving(true)
     try {
       const payload = { ...form }
-      payload.startDate = payload.startDate || today()
+      payload.startDate = backlogMode ? payload.startDate : (payload.startDate || today())
+      if (backlogMode) payload.mode = 'backlog'
       if (!payload.assignee) delete payload.assignee
       if (payload.type !== 'bug') payload.severity = ''
       if (payload.type !== 'other') payload.customTypeName = ''
@@ -156,10 +179,14 @@ export default function Tasks() {
         ? await api.put(`/tasks/${editTask._id}`, payload)
         : await api.post('/tasks', payload)
       if (!editTask) await uploadPending(result._id)
-      toast.success(editTask ? 'Task updated' : 'Task created')
+      toast.success(editTask ? 'Task updated' : backlogMode ? 'Backlog item created' : 'Task created')
       setShowModal(false)
       setPendingFiles([])
       setUploadProgress({})
+      if (backlogMode) {
+        navigate(`/projects/${encodeURIComponent(backlogProjectId)}`)
+        return
+      }
       await loadTasks()
     } catch (err) {
       toast.error(err.message)
@@ -270,7 +297,8 @@ export default function Tasks() {
       {showModal && (
         <div className="modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) setShowModal(false) }}>
           <div className="modal" style={{ maxWidth:760 }}>
-            <div className="modal-header"><h3>{editTask ? 'Edit Task' : 'Assign Task'}</h3><button className="btn-icon" onClick={() => setShowModal(false)}><i className="ti ti-x" /></button></div>
+            <div className="modal-header"><h3>{editTask ? 'Edit Task' : backlogMode ? 'Create Backlog Item' : 'Assign Task'}</h3><button className="btn-icon" onClick={() => setShowModal(false)}><i className="ti ti-x" /></button></div>
+            {backlogMode && <div style={{ margin:'0 20px',padding:10,borderRadius:8,background:'#fffbeb',color:'#92400e',fontSize:13 }}>Backlog item — dates and assignee are optional. No assignment email is sent until it is moved to Tasks.</div>}
             <div className="modal-body" style={{ maxHeight:'70vh',overflowY:'auto' }}>
               <div className="form-group">
                 <label className="form-label">Title *</label>
@@ -302,7 +330,7 @@ export default function Tasks() {
 
               <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:12 }}>
                 <div className="form-group"><label className="form-label">Project *</label>
-                  <select className="form-control" value={form.project} onChange={(event) => setForm((current) => ({ ...current,project:event.target.value }))}>
+                  <select className="form-control" disabled={backlogMode && Boolean(backlogProjectId)} value={form.project} onChange={(event) => setForm((current) => ({ ...current,project:event.target.value,milestone:'' }))}>
                     <option value="">Select project</option>{projects.map((project) => <option key={project._id} value={project._id}>{project.name}</option>)}
                   </select>{inlineErrors.project && <span style={{ color:'#dc2626',fontSize:12 }}>{inlineErrors.project}</span>}
                 </div>
@@ -311,6 +339,14 @@ export default function Tasks() {
                     <option value="">Unassigned</option>{users.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}
                   </select>
                 </div>
+                {projectMilestones.length > 0 && <div className="form-group">
+                  <label className="form-label">Milestone</label>
+                  <select className="form-control" value={form.milestone || ''}
+                    onChange={(event) => setForm((current) => ({ ...current,milestone:event.target.value }))}>
+                    <option value="">No milestone</option>
+                    {projectMilestones.map((milestone) => <option key={milestone.id} value={milestone.id}>{milestone.name}</option>)}
+                  </select>
+                </div>}
                 {form.type === 'bug' && <div className="form-group"><label className="form-label">Severity</label>
                   <select className="form-control" value={form.severity} onChange={(event) => setForm((current) => ({ ...current,severity:event.target.value }))}>
                     <option value="">Select severity</option>{SEVERITIES.map((severity) => <option key={severity}>{severity}</option>)}
@@ -353,7 +389,7 @@ export default function Tasks() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setShowModal(false)}>Cancel</button>
-              <button className="btn btn-primary" disabled={saving} onClick={save}>{saving ? 'Saving…' : (editTask ? 'Update Task' : 'Create Task')}</button>
+              <button className="btn btn-primary" disabled={saving} onClick={save}>{saving ? 'Saving…' : (editTask ? 'Update Task' : backlogMode ? 'Save Backlog Item' : 'Create Task')}</button>
             </div>
           </div>
         </div>

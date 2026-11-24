@@ -12,6 +12,10 @@ function isManager(user) {
   return user?.role === 'manager';
 }
 
+function canViewAllProjects(user) {
+  return isAdministrator(user) || isManager(user);
+}
+
 function projectIds(user) {
   return new Set((Array.isArray(user?.assignedProjects) ? user.assignedProjects : [])
     .map((project) => String(typeof project === 'object' && project !== null ? project._id : project)));
@@ -26,21 +30,36 @@ function hasProjectManagementAccess(user, projectId) {
 }
 
 function canReadProject(user, project) {
-  return Boolean(project && (isAdministrator(user)
-    || project.owner === user?._id
-    || (project.members || []).includes(user?._id)));
+  if (!project) return false;
+  const userId = String(user?._id || '');
+  return canViewAllProjects(user) || projectHasUser(project, userId);
 }
 
 function canManageProject(user, project) {
-  return Boolean(project && (isAdministrator(user)
-    || (isManager(user)
-      && (project.owner === user?._id || (project.members || []).includes(user?._id)))));
+  if (!project) return false;
+  return isAdministrator(user)
+    || (isManager(user) && projectHasUser(project, String(user?._id || ''), false));
 }
 
 function canCreateWorkItem(user, project) {
-  return Boolean(project && (isAdministrator(user)
+  if (!project) return false;
+  return isAdministrator(user)
     || ((isManager(user) || user?.role === 'employee')
-      && (project.owner === user?._id || (project.members || []).includes(user?._id)))));
+      && projectHasUser(project, String(user?._id || '')));
+}
+
+function canCreateBacklog(user, project) {
+  if (!project) return false;
+  if (canViewAllProjects(user)) return true;
+  return user?.role === 'employee'
+    && projectHasUser(project, String(user?._id || ''));
+}
+
+function projectHasUser(project, userId, includeStakeholders = true) {
+  const projectUserId = (value) => String(typeof value === 'object' && value !== null ? value._id : value || '');
+  return projectUserId(project.owner) === userId
+    || (project.members || []).some((member) => projectUserId(member) === userId)
+    || (includeStakeholders && (project.stakeholders || []).some((member) => projectUserId(member) === userId));
 }
 
 function canUpdateWorkItem(user, item, project) {
@@ -67,12 +86,14 @@ module.exports = {
   isAdministrator,
   isSuperAdministrator,
   isManager,
+  canViewAllProjects,
   projectIds,
   hasProjectAccess,
   hasProjectManagementAccess,
   canReadProject,
   canManageProject,
   canCreateWorkItem,
+  canCreateBacklog,
   canUpdateWorkItem,
   requireRoles,
   requireAdministrator

@@ -8,31 +8,45 @@ export default function AdminProjects() {
   const { user } = useAuth();
   const membershipOnly = user?.role === 'manager';
   const [projects, setProjects] = useState([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editProject, setEditProject] = useState(null);
-  const [form, setForm] = useState({ name:'', description:'', key:'', members:[], stakeholders:[] });
+  const [form, setForm] = useState({
+    name:'',description:'',key:'',owner:'',members:[],stakeholders:[],
+    status:'planning',priority:'Medium',milestones:[{ name:'General',dueDate:'',owner:'' }],
+    startDate:'',targetEndDate:''
+  });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const load = () => {
-    api.get('/projects')
-      .then(async (p) => {
+  useEffect(() => {
+    setLoading(true);
+    setError('');
+    api.getWithMeta('/projects', { page, limit:100 })
+      .then(async (result) => {
+        const p = result.data;
+        setTotal(result.total);
         setProjects(p);
         const lists = membershipOnly
           ? await Promise.all(p.map(project => api.get('/users', { available:true, assignable:true, project:project._id })))
           : [await api.get('/users')];
         setUsers([...new Map(lists.flat().map(member => [member._id, member])).values()]);
       })
+      .catch((loadError) => setError(loadError.message))
       .finally(()=>setLoading(false));
-  };
-  useEffect(load, []);
+  }, [page, membershipOnly]);
 
   const openNew = () => {
     if (membershipOnly) return;
     setEditProject(null);
-    setForm({ name:'', description:'', key:'', members:[], stakeholders:[] });
+    setForm({
+      name:'',description:'',key:'',owner:user?._id || '',members:[],stakeholders:[],
+      status:'planning',priority:'Medium',milestones:[{ name:'General',dueDate:'',owner:'' }],
+      startDate:'',targetEndDate:''
+    });
     setError(''); setShowModal(true);
   };
 
@@ -42,14 +56,24 @@ export default function AdminProjects() {
       name:p.name,
       description:p.description||'',
       key:p.key,
+      owner:p.owner?._id || p.owner || '',
       members:p.members?.map(m=>m._id||m)||[],
-      stakeholders:p.stakeholders?.map(user=>user._id)||[]
+      stakeholders:p.stakeholders?.map(user=>user._id)||[],
+      status:p.status || 'planning',priority:p.priority || 'Medium',
+      milestones:(p.milestones || []).map((milestone) => ({
+        id:milestone.id,name:milestone.name,dueDate:milestone.dueDate || '',owner:milestone.owner || ''
+      })),
+      startDate:p.startDate || '',targetEndDate:p.targetEndDate || ''
     });
     setError(''); setShowModal(true);
   };
 
   const save = async () => {
-    if (!membershipOnly && (!form.name.trim() || !form.key.trim())) { setError('Name and key required'); return; }
+    if (!membershipOnly && (!form.name.trim() || !form.key.trim() || !form.owner
+      || !form.milestones.length || form.milestones.some((milestone) => !milestone.name.trim())
+      || (form.startDate && form.targetEndDate && form.targetEndDate < form.startDate))) {
+      setError('Name, key, owner, and milestone names are required'); return;
+    }
     setSaving(true); setError('');
     try {
       if (editProject) {
@@ -61,6 +85,8 @@ export default function AdminProjects() {
         if (membershipOnly) return;
         const created = await api.post('/projects', form);
         setProjects(ps => [created, ...ps]);
+        setTotal(count => count + 1);
+        setPage(1);
       }
       setShowModal(false);
     } catch(err) { setError(err.message); }
@@ -69,8 +95,14 @@ export default function AdminProjects() {
 
   const remove = async (id) => {
     if (!window.confirm('Delete this project?')) return;
-    await api.delete(`/projects/${id}`);
-    setProjects(ps => ps.filter(p => p._id !== id));
+    try {
+      await api.delete(`/projects/${id}`);
+      setProjects(ps => ps.filter(p => p._id !== id));
+      setTotal(count => Math.max(0, count - 1));
+      if (projects.length === 1 && page > 1) setPage(current => current - 1);
+    } catch (deleteError) {
+      setError(deleteError.message);
+    }
   };
 
   const toggleMember = (uid) => {
@@ -86,6 +118,25 @@ export default function AdminProjects() {
     }));
   };
 
+  const setMilestoneCount = (count) => {
+    const length = Math.min(20, Math.max(1, Number(count) || 1));
+    setForm((current) => {
+      const milestones = current.milestones.slice(0, length);
+      while (milestones.length < length) milestones.push({ name:'',dueDate:'',owner:'' });
+      return { ...current,milestones };
+    });
+  };
+
+  const reorderMilestone = (index, direction) => {
+    setForm((current) => {
+      const target = index + direction;
+      if (target < 0 || target >= current.milestones.length) return current;
+      const milestones = [...current.milestones];
+      [milestones[index],milestones[target]] = [milestones[target],milestones[index]];
+      return { ...current,milestones };
+    });
+  };
+
   const PROJECT_COLORS = ['#378add','#1d9e75','#ef9f27','#534ab7','#e24b4a','#d4537e'];
 
   return (
@@ -93,7 +144,7 @@ export default function AdminProjects() {
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:24 }}>
         <div>
           <h1 style={{ fontSize:22, fontWeight:700, color:'#1a202c' }}>{membershipOnly ? 'Project Members' : 'Projects'}</h1>
-          <p style={{ color:'#64748b', fontSize:13, marginTop:2 }}>{projects.length} projects</p>
+          <p style={{ color:'#64748b', fontSize:13, marginTop:2 }}>{total} projects</p>
         </div>
         {!membershipOnly && <button onClick={openNew} style={{ background:'#378add', color:'#fff', border:'none', borderRadius:8, padding:'9px 18px', fontSize:13, fontWeight:500, display:'flex', alignItems:'center', gap:6 }}>
           <i className="ti ti-plus" />New Project
@@ -102,6 +153,8 @@ export default function AdminProjects() {
 
       {loading ? (
         <div style={{ padding:40, textAlign:'center', color:'#94a3b8' }}>Loading...</div>
+      ) : error && !showModal ? (
+        <div role="alert" style={{ background:'#fef2f2',border:'1px solid #fecaca',color:'#dc2626',padding:14,borderRadius:8 }}>{error}</div>
       ) : projects.length === 0 ? (
         <div style={{ background:'#fff', borderRadius:12, border:'1px solid #e2e8f0', padding:48, textAlign:'center' }}>
           <i className="ti ti-folder-off" style={{ fontSize:40, color:'#e2e8f0', display:'block', marginBottom:12 }} />
@@ -148,6 +201,11 @@ export default function AdminProjects() {
           })}
         </div>
       )}
+      {!loading && total > 100 && <div style={{ display:'flex',justifyContent:'center',alignItems:'center',gap:12,marginTop:20 }}>
+        <button className="btn btn-ghost" disabled={page === 1} onClick={() => setPage(current => current - 1)}>Previous</button>
+        <span aria-live="polite">Page {page} of {Math.ceil(total / 100)}</span>
+        <button className="btn btn-ghost" disabled={page >= Math.ceil(total / 100)} onClick={() => setPage(current => current + 1)}>Next</button>
+      </div>}
 
       {showModal && (
         <div onClick={()=>setShowModal(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
@@ -160,6 +218,76 @@ export default function AdminProjects() {
             {!membershipOnly && <div style={{ marginBottom:14 }}>
               <label style={{ display:'block', fontSize:11, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 }}>Project Name *</label>
               <input style={inputStyle} value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="e.g. Donnelly Apartments" />
+            </div>}
+            {!membershipOnly && <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14 }}>
+              <label style={{ fontSize:12,color:'#475569' }}>Project Status *
+                <select style={{ ...inputStyle,display:'block',marginTop:5 }} required value={form.status}
+                  onChange={(event) => setForm((current) => ({ ...current,status:event.target.value }))}>
+                  <option value="planning">Planning</option><option value="active">In Progress</option>
+                  <option value="on_hold">On Hold</option><option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </label>
+              <label style={{ fontSize:12,color:'#475569' }}>Project Priority *
+                <select style={{ ...inputStyle,display:'block',marginTop:5 }} required value={form.priority}
+                  onChange={(event) => setForm((current) => ({ ...current,priority:event.target.value }))}>
+                  {['High','Medium','Low'].map((priority) => <option key={priority}>{priority}</option>)}
+                </select>
+              </label>
+            </div>}
+            {!membershipOnly && <div style={{ marginBottom:14 }}>
+              <label style={{ display:'block',fontSize:12,color:'#475569',marginBottom:5 }}>Project Owner *</label>
+              <select style={inputStyle} required value={form.owner}
+                onChange={(event) => setForm((current) => ({ ...current,owner:event.target.value }))}>
+                <option value="">Select owner</option>{users.map((person) => <option key={person._id} value={person._id}>{person.name}</option>)}
+              </select>
+            </div>}
+            {!membershipOnly && <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14 }}>
+              <label style={{ fontSize:12,color:'#475569' }}>Start date
+                <input style={{ ...inputStyle,display:'block',marginTop:5 }} type="date" value={form.startDate}
+                  onChange={(event) => setForm((current) => ({ ...current,startDate:event.target.value }))} />
+              </label>
+              <label style={{ fontSize:12,color:'#475569' }}>Target end date
+                <input style={{ ...inputStyle,display:'block',marginTop:5 }} type="date" value={form.targetEndDate}
+                  onChange={(event) => setForm((current) => ({ ...current,targetEndDate:event.target.value }))} />
+              </label>
+            </div>}
+            {!membershipOnly && <div style={{ marginBottom:14 }}>
+              <label style={{ display:'block',fontSize:12,color:'#475569',marginBottom:5 }}>Number of milestones *</label>
+              <input style={inputStyle} type="number" min="1" max="20" required value={form.milestones.length}
+                onChange={(event) => setMilestoneCount(event.target.value)} />
+              <div style={{ display:'grid',gap:8,marginTop:8 }}>
+                {form.milestones.map((milestone,index) => (
+                  <div key={milestone.id || index} style={{ display:'grid',gridTemplateColumns:'1fr 1fr auto',gap:6 }}>
+                    <input style={inputStyle} required maxLength={100} aria-label={`Milestone ${index+1} name`}
+                      placeholder={`Milestone ${index+1} name`} value={milestone.name}
+                      onChange={(event) => setForm((current) => ({
+                        ...current,milestones:current.milestones.map((item,itemIndex) => itemIndex === index
+                          ? { ...item,name:event.target.value } : item)
+                      }))} />
+                    <input style={inputStyle} type="date" aria-label={`Milestone ${index+1} due date`}
+                      value={milestone.dueDate || ''}
+                      onChange={(event) => setForm((current) => ({
+                        ...current,milestones:current.milestones.map((item,itemIndex) => itemIndex === index
+                          ? { ...item,dueDate:event.target.value } : item)
+                      }))} />
+                    <div style={{ display:'flex',gap:4 }}>
+                      <button type="button" className="btn-icon" aria-label="Move milestone up" disabled={index===0}
+                        onClick={() => reorderMilestone(index,-1)}><i className="ti ti-arrow-up" /></button>
+                      <button type="button" className="btn-icon" aria-label="Move milestone down" disabled={index===form.milestones.length-1}
+                        onClick={() => reorderMilestone(index,1)}><i className="ti ti-arrow-down" /></button>
+                    </div>
+                    <select style={inputStyle} aria-label={`Milestone ${index+1} owner`}
+                      value={milestone.owner || ''} onChange={(event) => setForm((current) => ({
+                        ...current,milestones:current.milestones.map((item,itemIndex) => itemIndex === index
+                          ? { ...item,owner:event.target.value } : item)
+                      }))}>
+                      <option value="">No milestone owner</option>
+                      {users.map((person) => <option key={person._id} value={person._id}>{person.name}</option>)}
+                    </select>
+                  </div>
+                ))}
+              </div>
             </div>}
             {!membershipOnly && <div style={{ marginBottom:14 }}>
               <label style={{ display:'block', fontSize:11, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 }}>Key * (short code)</label>

@@ -70,9 +70,9 @@ export default function Tasks() {
 
   useEffect(() => {
     api.get('/projects').then(setProjects).catch(() => {})
-    if (showTeamControls) api.get('/users').then(setUsers).catch(() => {})
+    api.get('/users', { taskAssignees:true }).then(setUsers).catch(() => {})
     api.get('/tasks/types').then(setTypes).catch(() => {})
-  }, [showTeamControls])
+  }, [])
 
   useEffect(() => {
     const params = new URLSearchParams()

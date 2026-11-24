@@ -197,15 +197,10 @@ router.post('/', auth, async (req, res) => {
     if (!['super_admin', 'admin', 'manager', 'employee'].includes(req.user.role)) {
       return res.status(403).json({ message: 'Your role is read-only' });
     }
-    if (req.user.role === 'employee' && assignee && assignee !== req.user._id) {
-      return res.status(403).json({ message: 'Employees cannot assign tasks to other users' });
-    }
-    if (assignee && req.user.role !== 'employee') {
+    if (assignee) {
       const assigneeRecord = await store.findById('users', assignee);
-      if (!assigneeRecord?.active
-        || (projectRecord.owner !== assignee
-          && !(projectRecord.members || []).map(String).includes(String(assignee)))) {
-        return res.status(400).json({ message: 'The assignee must be a member of this project' });
+      if (!assigneeRecord?.active) {
+        return res.status(400).json({ message: 'The assignee must be an active user' });
       }
     }
     const task = await store.insert('tasks', {
@@ -253,7 +248,7 @@ router.put('/:id', auth, async (req, res) => {
       return res.status(403).json({ message: 'You cannot update this task' });
     }
     const update = {};
-    const employeeFields = ['title', 'description', 'status', 'priority', 'startDate', 'endDate'];
+    const employeeFields = ['title', 'description', 'assignee', 'status', 'priority', 'startDate', 'endDate'];
     const managerFields = ['title', 'description', 'type', 'customTypeName', 'project', 'assignee', 'status', 'priority', 'startDate', 'endDate', 'severity', 'foundInVersion', 'fixedInVersion', 'targetRelease', 'sprint', 'estimatedHours'];
     const allowedFields = req.user.role === 'employee'
       ? employeeFields
@@ -286,13 +281,9 @@ router.put('/:id', auth, async (req, res) => {
       }
     }
     if (update.assignee) {
-      const targetProjectId = update.project || existing.project;
       const assigneeRecord = await store.findById('users', update.assignee);
-      const targetProject = update.project ? await store.findById('projects', targetProjectId) : project;
-      if (!assigneeRecord?.active
-        || (targetProject?.owner !== update.assignee
-          && !(targetProject?.members || []).map(String).includes(String(update.assignee)))) {
-        return res.status(400).json({ message: 'The assignee must be a member of this project' });
+      if (!assigneeRecord?.active) {
+        return res.status(400).json({ message: 'The assignee must be an active user' });
       }
     }
     const task = await store.update('tasks', req.params.id, update);

@@ -63,6 +63,7 @@ paths:
             minimum: 1
     post:
       summary: Create or assign a task
+      description: Any permitted task creator can assign the task to any active user, whether or not that user is a member of the project.
       requestBody:
         required: true
         content:
@@ -85,6 +86,7 @@ paths:
       description: Returns 404 when an employee or trainee requests a task assigned to another user.
     put:
       summary: Update task
+      description: Permitted task editors can assign it to any active user, whether or not that user is a member of the project.
   /api/tasks/{id}/attachments:
     post:
       summary: Upload task attachments
@@ -124,6 +126,7 @@ components:
           type: string
         assignee:
           type: string
+          description: ID of any active user; project membership is not required.
         status:
           type: string
         priority:

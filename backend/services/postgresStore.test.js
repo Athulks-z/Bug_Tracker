@@ -120,7 +120,6 @@ test('normalized PostgreSQL store preserves unified Task CRUD and concurrent ins
         size:5
       }]
     });
-
     const employeeList = await queryTasks(user, { limit:200 });
     assert.deepEqual(employeeList.items.map((item) => item._id), [employeeTask._id]);
     assert.equal(await queryTaskCounts(user), 1);
@@ -139,6 +138,7 @@ test('normalized PostgreSQL store preserves unified Task CRUD and concurrent ins
     const app = express();
     app.use(express.json());
     app.use('/api/tasks', require('../routes/tasks'));
+    app.use('/api/users', require('../routes/users'));
     testServer = app.listen(0, '127.0.0.1');
     await new Promise((resolve, reject) => {
       testServer.once('listening', resolve);
@@ -169,8 +169,15 @@ test('normalized PostgreSQL store preserves unified Task CRUD and concurrent ins
     const managerDashboardResponse = await fetch(`${baseUrl}/dashboard`, {
       headers:{ Authorization:`Bearer ${managerToken}` }
     });
+    const assigneeOptionsResponse = await fetch('http://127.0.0.1:'
+      + testServer.address().port + '/api/users?taskAssignees=true', {
+      headers:{ Authorization:`Bearer ${employeeToken}` }
+    });
     assert.equal(hiddenDetail.status, 404);
     assert.equal(hiddenAttachment.status, 404);
+    const assigneeOptions = await assigneeOptionsResponse.json();
+    assert.equal(assigneeOptions.some((item) => item._id === trainee._id), true);
+    assert.equal(assigneeOptions.every((item) => Object.keys(item).sort().join(',') === '_id,name,role'), true);
     assert.deepEqual((await employeeApiListResponse.json()).map((item) => item._id), [employeeTask._id]);
     assert.equal((await employeeApiCountResponse.json()).total, 1);
     assert.equal(managerDetail.status, 200);
@@ -180,7 +187,6 @@ test('normalized PostgreSQL store preserves unified Task CRUD and concurrent ins
     assert.equal(employeeDashboardPayload.summary.total, 1);
     assert.equal(Object.prototype.hasOwnProperty.call(employeeDashboardPayload, 'teamWidgets'), false);
     assert.equal(Object.prototype.hasOwnProperty.call(managerDashboardPayload, 'teamWidgets'), true);
-
     const employeeDashboard = await queryTaskDashboard(user);
     assert.equal(employeeDashboard.summary.total, 1);
     assert.equal(employeeDashboard.byStatus.reduce((sum, item) => sum + item.count, 0), employeeList.total);
@@ -205,6 +211,24 @@ test('normalized PostgreSQL store preserves unified Task CRUD and concurrent ins
     assert.equal(Object.prototype.hasOwnProperty.call(managerDashboard, 'teamWidgets'), true);
     const adminList = await queryTasks({ _id:user._id, role:'admin' }, { limit:200 });
     assert.equal(adminList.total, managerList.total);
+
+    const assignmentTestTask = await store.insert('tasks', {
+      project:projectId, reporter:user._id, assignee:user._id,
+      title:'Task assignment permission test', status:'Open', type:'task',
+      comments:[], activity:[], timeLogs:[], attachments:[]
+    });
+    recordIds.tasks.push(assignmentTestTask._id);
+    const assignToNonMemberResponse = await fetch(`${baseUrl}/${assignmentTestTask._id}`, {
+      method:'PUT',
+      headers:{
+        Authorization:`Bearer ${employeeToken}`,
+        'Content-Type':'application/json'
+      },
+      body:JSON.stringify({ assignee:trainee._id })
+    });
+    assert.equal(assignToNonMemberResponse.status, 200);
+    const assignmentResult = await assignToNonMemberResponse.json();
+    assert.equal(assignmentResult.assignee._id, trainee._id);
 
     const firstTask = await store.findById('tasks', tasks[0]._id);
     assert.equal(firstTask.project, projectId);

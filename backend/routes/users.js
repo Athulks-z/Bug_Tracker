@@ -19,6 +19,13 @@ router.get('/', auth, async (req, res) => {
   try {
     const { available, search, role } = req.query;
     const searchText = String(search || '').toLowerCase();
+    if (req.query.taskAssignees === 'true') {
+      const users = (await store.list('users'))
+        .filter((user) => user.active)
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+        .map(({ _id, name, role: userRole }) => ({ _id, name, role:userRole }));
+      return res.json(users);
+    }
     if (available === 'true' && req.query.assignable === 'true' && isManager(req.user)) {
       const project = await store.findById('projects', String(req.query.project || ''));
       if (!canManageProject(req.user, project)) {

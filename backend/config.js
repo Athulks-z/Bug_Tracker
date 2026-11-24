@@ -55,6 +55,15 @@ function loadConfig(env = process.env) {
     throw new Error('DATABASE_POOL_MAX must be an integer between 1 and 100');
   }
 
+  const maxAttachmentMb = Number(env.MAX_ATTACHMENT_MB || 10);
+  if (!Number.isInteger(maxAttachmentMb) || maxAttachmentMb < 1 || maxAttachmentMb > 100) {
+    throw new Error('MAX_ATTACHMENT_MB must be an integer between 1 and 100');
+  }
+  const maxAttachmentsPerTask = Number(env.MAX_ATTACHMENTS_PER_TASK || 10);
+  if (!Number.isInteger(maxAttachmentsPerTask) || maxAttachmentsPerTask < 1 || maxAttachmentsPerTask > 100) {
+    throw new Error('MAX_ATTACHMENTS_PER_TASK must be an integer between 1 and 100');
+  }
+
   return {
     nodeEnv,
     port,
@@ -66,6 +75,8 @@ function loadConfig(env = process.env) {
     clientOrigins: parseClientOrigins(env.CLIENT_URL, nodeEnv),
     allowSelfRegistration: env.ALLOW_SELF_REGISTRATION === 'true',
     maxUploadMb,
+    maxAttachmentMb,
+    maxAttachmentsPerTask,
     jsonLimit: `${Math.ceil(maxUploadMb * 1.4)}mb`
   };
 }

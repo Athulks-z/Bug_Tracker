@@ -106,8 +106,8 @@ export default function Projects() {
                 ))}
                 {p.members.length > 4 && <div style={{ fontSize:11, color:'#9ca3af', marginLeft:8, display:'flex', alignItems:'center' }}>+{p.members.length-4}</div>}
               </div>
-              <Link to={`/issues?project=${p._id}`} className="btn btn-ghost btn-sm">
-                View Issues <i className="ti ti-arrow-right" />
+              <Link to={`/tasks?project=${p._id}`} className="btn btn-ghost btn-sm">
+                View Tasks <i className="ti ti-arrow-right" />
               </Link>
             </div>
           </div>

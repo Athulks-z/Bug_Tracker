@@ -7,7 +7,7 @@ const buildQuery = (params = {}) => {
   Object.entries(params).forEach(([key, value]) => {
     if (value === undefined || value === null || value === '') return;
     if (Array.isArray(value)) {
-      value.forEach(v => search.append(key, v));
+      value.forEach((item) => search.append(key, item));
     } else {
       search.append(key, value);
     }
@@ -31,7 +31,6 @@ const req = async (method, path, body, params, responseType = 'json') => {
     const data = await res.json().catch(() => ({ message: 'Request failed' }));
     throw new Error(data.message || 'Request failed');
   }
-
   if (responseType === 'blob') return res.blob();
   return res.json();
 };

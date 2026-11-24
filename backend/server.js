@@ -39,8 +39,6 @@ app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
 
 app.use(express.json({ limit: config.jsonLimit }));
-// serve uploaded files
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Health Check
 app.get('/api/health', (req, res) => {
@@ -70,11 +68,11 @@ try {
 
     app.use('/api/projects', require('./routes/projects'));
 
-    app.use('/api/issues', require('./routes/issues'));
 
     app.use('/api/templates', require('./routes/templates'));
 
     app.use('/api/tasks', require('./routes/tasks'));
+    app.use('/api/work-types', require('./routes/workTypes'));
     app.use('/api/notifications', require('./routes/notifications'));
     app.use('/api/sprints', require('./routes/sprints'));
 
@@ -83,6 +81,11 @@ try {
     console.error('Route loading failed:', err.name);
     process.exit(1);
 }
+
+// Compatibility redirects for links/bookmarks created before Issue and Task were merged.
+app.use('/api/issues', (req, res) => {
+    res.redirect(308, `/api/tasks${req.url}`);
+});
 
 // 404 Handler
 app.use((req, res) => {

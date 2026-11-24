@@ -11,6 +11,7 @@ const {
 } = require('../middleware/roles');
 const { isStrongPassword } = require('../utils/passwordPolicy');
 const { store, hydrateUser } = require('../services/data');
+const { queryBusyTaskAssigneeIds } = require('../services/taskQueries');
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -37,9 +38,7 @@ router.get('/', auth, async (req, res) => {
       }
     }
     const busyIds = available === 'true'
-      ? new Set((await store.list('tasks'))
-        .filter((task) => task.assignee && task.status !== 'Completed')
-        .map((task) => task.assignee))
+      ? await queryBusyTaskAssigneeIds(req.user)
       : null;
     const users = (await store.list('users'))
       .filter((user) => isAdministrator(req.user)

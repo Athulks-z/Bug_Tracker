@@ -10,7 +10,7 @@ export default function Reports() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    api.get('/issues').then(r => setIssues(r.data)).finally(()=>setLoading(false))
+    api.get('/tasks').then(setIssues).finally(()=>setLoading(false))
   }, [])
 
   const bySev = SEV_ORDER.map(s => ({ label:s, count:issues.filter(i=>i.severity===s).length }))
@@ -39,7 +39,7 @@ export default function Reports() {
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:20, marginBottom:20 }}>
         {/* By Status */}
         <div className="card">
-          <h3 style={{ fontSize:14, fontWeight:600, marginBottom:18 }}>Issues by Status</h3>
+          <h3 style={{ fontSize:14, fontWeight:600, marginBottom:18 }}>Tasks by Status</h3>
           {byStatus.map(s => (
             <div key={s.label} style={{ marginBottom:14 }}>
               <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, marginBottom:5 }}>
@@ -55,7 +55,7 @@ export default function Reports() {
 
         {/* By Severity */}
         <div className="card">
-          <h3 style={{ fontSize:14, fontWeight:600, marginBottom:18 }}>Issues by Severity</h3>
+          <h3 style={{ fontSize:14, fontWeight:600, marginBottom:18 }}>Tasks by Severity</h3>
           {bySev.map(s => (
             <div key={s.label} style={{ marginBottom:14 }}>
               <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, marginBottom:5 }}>
@@ -100,7 +100,7 @@ export default function Reports() {
         <div style={{ padding:20, display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:20, textAlign:'center' }}>
           <div>
             <div style={{ fontSize:36, fontWeight:700, color:'#111827' }}>{issues.length}</div>
-            <div style={{ fontSize:13, color:'#6b7280' }}>Total Issues</div>
+            <div style={{ fontSize:13, color:'#6b7280' }}>Total Tasks</div>
           </div>
           <div>
             <div style={{ fontSize:36, fontWeight:700, color:'#e24b4a' }}>

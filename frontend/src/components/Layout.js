@@ -33,7 +33,6 @@ export default function Layout() {
         <nav style={{ padding:'10px 8px', flex:1, overflow:'hidden' }}>
           {[
             { to:'/', icon:'ti-layout-dashboard', label:'Dashboard' },
-            { to:'/issues', icon:'ti-bug', label:'Issues' },
             { to:'/tasks', icon:'ti-list-check', label:'Tasks' },
             { to:'/profile', icon:'ti-id', label:'Profile' },
           ].map(item => (

@@ -62,10 +62,25 @@ async function hydrateIssue(issue) {
 async function hydrateTask(task) {
   if (!task) return null;
   const result = publicRecord(task);
+  result.typeLabel = String(task.type || '').toLowerCase() === 'other'
+    ? (task.customTypeName ? `Other: ${task.customTypeName}` : 'Other')
+    : (task.type || 'Task');
   result.reporter = publicUser(await store.findById('users', task.reporter));
   result.assignee = task.assignee ? publicUser(await store.findById('users', task.assignee)) : null;
   result.rejectedBy = task.rejectedBy ? publicUser(await store.findById('users', task.rejectedBy)) : null;
   result.project = await hydrateProject(await store.findById('projects', task.project));
+  result.comments = await Promise.all((task.comments || []).map(async (comment) => ({
+    ...comment,
+    author: publicUser(await store.findById('users', comment.author))
+  })));
+  result.activity = await Promise.all((task.activity || []).map(async (activity) => ({
+    ...activity,
+    user: publicUser(await store.findById('users', activity.user))
+  })));
+  result.timeLogs = await Promise.all((task.timeLogs || []).map(async (timeLog) => ({
+    ...timeLog,
+    user: publicUser(await store.findById('users', timeLog.user))
+  })));
   return result;
 }
 

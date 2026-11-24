@@ -171,10 +171,62 @@ async function loadRecords(client, collection) {
     }));
 
     if (collection === 'tasks') {
+      const ids = records.map((record) => record._id);
+      if (!ids.length) return [];
+      const [comments, activity, timeEntries, attachments] = await Promise.all([
+        client.query('SELECT * FROM public.comments WHERE work_item_id = ANY($1::text[]) ORDER BY created_at, id', [ids]),
+        client.query('SELECT * FROM public.activity_log WHERE work_item_id = ANY($1::text[]) ORDER BY created_at, id', [ids]),
+        client.query('SELECT * FROM public.time_entries WHERE work_item_id = ANY($1::text[]) ORDER BY created_at, id', [ids]),
+        client.query('SELECT * FROM public.attachments WHERE work_item_id = ANY($1::text[]) ORDER BY created_at, id', [ids])
+      ]);
+      const byItem = (rowsToGroup, itemId, convert) => rowsToGroup
+        .filter((row) => row.work_item_id === itemId)
+        .map(convert);
       return records.map((record, index) => ({
         ...record,
         type: rows[index].task_type,
-        parentTask: rows[index].parent_task_id || ''
+        taskType: rows[index].task_type,
+        parentTask: rows[index].parent_task_id || '',
+        customTypeName: rows[index].custom_type_name || '',
+        issueNumber: rows[index].issue_number,
+        severity: rows[index].severity || '',
+        foundInVersion: rows[index].found_in_version || '',
+        fixedInVersion: rows[index].fixed_in_version || '',
+        targetRelease: rows[index].target_release_id || '',
+        sprint: rows[index].sprint_id || '',
+        reopenedCount: rows[index].reopened_count || 0,
+        resolvedAt: rows[index].resolved_at ? rows[index].resolved_at.toISOString() : '',
+        comments: byItem(comments.rows, record._id, (item) => ({
+          _id: item.id,
+          author: item.author_user_id,
+          text: item.body_text,
+          createdAt: item.created_at.toISOString(),
+          updatedAt: item.updated_at.toISOString()
+        })),
+        activity: byItem(activity.rows, record._id, (item) => ({
+          _id: item.id,
+          user: item.actor_user_id || '',
+          action: item.action,
+          details: item.details || '',
+          createdAt: item.created_at.toISOString()
+        })),
+        timeLogs: byItem(timeEntries.rows, record._id, (item) => ({
+          _id: item.id,
+          user: item.user_id,
+          hours: Number(item.hours),
+          note: item.note || '',
+          date: dateOutput(item.work_date),
+          createdAt: item.created_at.toISOString()
+        })),
+        attachments: byItem(attachments.rows, record._id, (item) => ({
+          _id: item.id,
+          filename: item.filename,
+          path: item.storage_key,
+          uploadedBy: item.uploaded_by_user_id,
+          createdAt: item.created_at.toISOString(),
+          size: Number(item.size_bytes),
+          mime: item.mime || ''
+        }))
       }));
     }
 
@@ -432,11 +484,24 @@ async function saveRecord(client, collection, record) {
       await replaceIssueChildren(client, id, projectId, record);
     } else {
       await client.query(
-        `INSERT INTO public.tasks (work_item_id,project_id,task_type,parent_task_id)
-         VALUES ($1,$2,$3,NULLIF($4,'')) ON CONFLICT (work_item_id) DO UPDATE SET
-         project_id=EXCLUDED.project_id,task_type=EXCLUDED.task_type,parent_task_id=EXCLUDED.parent_task_id`,
-        [id, projectId, taskType, record.parentTask || '']
+        `INSERT INTO public.tasks
+         (work_item_id,project_id,task_type,parent_task_id,custom_type_name,
+          issue_number,severity,found_in_version,fixed_in_version,target_release_id,
+          reopened_count,resolved_at)
+         VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),$6,$7,$8,$9,NULLIF($10,''),$11,$12)
+         ON CONFLICT (work_item_id) DO UPDATE SET
+         project_id=EXCLUDED.project_id,task_type=EXCLUDED.task_type,parent_task_id=EXCLUDED.parent_task_id,
+         custom_type_name=EXCLUDED.custom_type_name,issue_number=EXCLUDED.issue_number,
+         severity=EXCLUDED.severity,found_in_version=EXCLUDED.found_in_version,
+         fixed_in_version=EXCLUDED.fixed_in_version,target_release_id=EXCLUDED.target_release_id,
+         reopened_count=EXCLUDED.reopened_count,resolved_at=EXCLUDED.resolved_at`,
+        [id, projectId, taskType, record.parentTask || '', record.customTypeName || '',
+          record.issueNumber === undefined || record.issueNumber === null ? null : Number(record.issueNumber),
+          record.severity || '', record.foundInVersion || '', record.fixedInVersion || '',
+          record.targetRelease || '', Number(record.reopenedCount || 0),
+          timestamp(record.resolvedAt, null)]
       );
+      await replaceIssueChildren(client, id, projectId, record);
     }
     return { ...record, _id: id, createdAt: createdAt.toISOString(), updatedAt: updatedAt.toISOString() };
   }
@@ -483,7 +548,7 @@ async function saveRecord(client, collection, record) {
   if (collection === 'notifications') {
     const issueId = String(record.issue || '');
     const issueResult = issueId
-      ? await client.query('SELECT id,project_id FROM public.work_items WHERE id=$1 AND kind=$2', [issueId, 'issue'])
+      ? await client.query('SELECT id,project_id FROM public.work_items WHERE id=$1 AND kind=$2', [issueId, 'task'])
       : { rows: [] };
     if (issueId && !issueResult.rows[0]) {
       throw storeError('Referenced issue does not exist', 'INVALID_ISSUE_REFERENCE');
@@ -617,17 +682,6 @@ class PostgresStore {
           const existing = await client.query('SELECT 1 FROM public.users LIMIT 1');
           if (existing.rowCount) throw storeError('A bootstrap admin already exists', 'BOOTSTRAP_ADMIN_EXISTS');
         }
-      }
-      if (collection === 'issues' && input.issueNumber === undefined) {
-        await client.query(
-          "SELECT pg_advisory_xact_lock(hashtextextended('bugtracker:issues:' || $1, 0))",
-          [String(input.project || '')]
-        );
-        const { rows } = await client.query(
-          'SELECT COALESCE(max(issue_number),0)::int + 1 AS next_number FROM public.issues WHERE project_id=$1',
-          [String(input.project || '')]
-        );
-        input = { ...input, issueNumber: rows[0].next_number };
       }
       const now = new Date().toISOString();
       const result = await saveRecord(client, collection, {

@@ -8,7 +8,8 @@
     "test": "node --test",
     "db:migrate": "node db/migrate.js",
     "db:migrate:sheets": "node db/migrateSheets.js",
-    "db:migrate:normalized": "node db/migrateNormalized.js"
+    "db:migrate:normalized": "node db/migrateNormalized.js",
+    "db:migrate:issue-task": "node db/migrateIssueToTask.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -20,7 +21,8 @@
     "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.2",
     "nodemailer": "^10.6.1",
-    "pg": "^8.23.1"
+    "pg": "^8.23.1",
+    "sanitize-html": "^2.18.2"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

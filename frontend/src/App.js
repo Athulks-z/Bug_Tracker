@@ -1,11 +1,11 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
-import Issues from './pages/Issues';
 import Tasks from './pages/Tasks';
+import TaskDetail from './pages/TaskDetail';
 import AdminUsers from './pages/AdminUsers';
 import AdminProjects from './pages/AdminProjects';
 import Sprints from './pages/Sprints';
@@ -36,6 +36,12 @@ function ProjectManagerRoute({ children }) {
   return children;
 }
 
+function LegacyIssueRedirect() {
+  const location = useLocation();
+  const suffix = location.pathname.replace(/^\/issues\/?/, '') ;
+  return <Navigate to={`/tasks${suffix ? `/${suffix}` : ''}${location.search}`} replace />;
+}
+
 export default function App() {
   return (
     <AuthProvider>
@@ -46,8 +52,10 @@ export default function App() {
           <Route path="/assignment-response" element={<AssignmentResponse />} />
           <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
             <Route index element={<Dashboard />} />
-            <Route path="issues" element={<Issues />} />
             <Route path="tasks" element={<Tasks />} />
+            <Route path="tasks/:id" element={<TaskDetail />} />
+            <Route path="issues" element={<LegacyIssueRedirect />} />
+            <Route path="issues/*" element={<LegacyIssueRedirect />} />
             <Route path="profile" element={<Profile />} />
             <Route path="sprints" element={<Sprints />} />
             <Route path="releases" element={<Releases />} />

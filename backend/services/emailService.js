@@ -1,5 +1,8 @@
 const crypto = require('crypto');
+const fs = require('fs');
+const sanitizeHtml = require('sanitize-html');
 const nodemailer = require('nodemailer');
+const path = require('path');
 const pool = require('../config/db');
 
 const SENDER_EMAIL = 'zcrossingtasktracker@gmail.com';
@@ -24,7 +27,7 @@ function escapeHtml(value) {
 }
 
 function buildAssignmentRejectedContent({ kind, title, projectName, rejectedBy, closingRemarks }) {
-  const itemType = kind === 'task' ? 'Task' : 'Issue';
+  const itemType = 'Task';
   const safeTitle = String(title || 'Untitled').replace(/[\r\n\x00-\x1f\x7f]+/g, ' ').trim();
   const subject = `[TaskTracker] ${itemType} rejected: ${safeTitle}`;
   const text = [
@@ -123,22 +126,39 @@ function buildRecipients(assignee, stakeholders, senderEmail = SENDER_EMAIL) {
 }
 
 function buildAssignmentContent({ kind, item, project, assignedBy, clientUrl, acceptUrl, rejectUrl }) {
-  const itemType = kind === 'task' ? 'Task' : 'Issue';
+  const itemType = 'Task';
+  const typeLabel = item.typeLabel
+    || (String(item.type || '').toLowerCase() === 'other'
+      ? (item.customTypeName ? `Other: ${item.customTypeName}` : 'Other')
+      : (item.type || 'Task'));
   const safeTitle = String(item.title || '').replace(/[\r\n\x00-\x1f\x7f]+/g, ' ').trim();
   const subject = `[TaskTracker] ${itemType} assigned: ${safeTitle || 'Untitled'}`;
   const projectName = project.name || project.key || 'Project';
   const dueDate = item.dueDate || item.endDate || '';
+  const safeDescriptionText = sanitizeHtml(item.description || '', { allowedTags: [], allowedAttributes: {} });
+  const safeDescriptionHtml = sanitizeHtml(item.description || '', {
+    allowedTags: ['p','br','strong','b','em','i','u','h1','h2','h3','ol','ul','li','a','blockquote','div','span','pre','code'],
+    allowedAttributes: { a:['href','title','target','rel'], '*':['style','align'] },
+    transformTags: {
+      a: (tagName, attribs) => ({
+        tagName,
+        attribs: { ...attribs, target:'_blank', rel:'noopener noreferrer' }
+      })
+    }
+  });
   const projectQuery = project._id ? `?project=${encodeURIComponent(project._id)}` : '';
-  const resourceUrl = `${clientUrl.replace(/\/+$/, '')}/${kind === 'task' ? 'tasks' : 'issues'}${projectQuery}`;
+  const resourceUrl = `${clientUrl.replace(/\/+$/, '')}/tasks${projectQuery}`;
   const text = [
     `Hello ${item.assignee?.name || 'there'},`,
     '',
     `A ${itemType.toLowerCase()} has been assigned to you.`,
     `Title: ${item.title || 'Untitled'}`,
+    `Type: ${typeLabel}`,
     `Project: ${projectName}${project.key ? ` (${project.key})` : ''}`,
     `Assigned by: ${assignedBy || 'TaskTracker user'}`,
     item.status ? `Status: ${item.status}` : '',
     dueDate ? `Due date: ${dueDate}` : '',
+    safeDescriptionText ? `Description:\n${safeDescriptionText}` : '',
     '',
     'Accept this assignment (it will move the item to In Progress):',
     acceptUrl,
@@ -152,11 +172,13 @@ function buildAssignmentContent({ kind, item, project, assignedBy, clientUrl, ac
     <p>A ${itemType.toLowerCase()} has been assigned to you.</p>
     <ul>
       <li><strong>Title:</strong> ${escapeHtml(item.title || 'Untitled')}</li>
+      <li><strong>Type:</strong> ${escapeHtml(typeLabel)}</li>
       <li><strong>Project:</strong> ${escapeHtml(projectName)}${project.key ? ` (${escapeHtml(project.key)})` : ''}</li>
       <li><strong>Assigned by:</strong> ${escapeHtml(assignedBy || 'TaskTracker user')}</li>
       ${item.status ? `<li><strong>Status:</strong> ${escapeHtml(item.status)}</li>` : ''}
       ${dueDate ? `<li><strong>Due date:</strong> ${escapeHtml(dueDate)}</li>` : ''}
     </ul>
+    ${safeDescriptionHtml ? `<div><strong>Description:</strong>${safeDescriptionHtml}</div>` : ''}
     <p>Accept this assignment to move it to In Progress:</p>
     <p><a href="${escapeHtml(acceptUrl)}" style="display:inline-block;padding:10px 18px;background:#1d9e75;color:#fff;text-decoration:none;border-radius:6px">Accept assignment</a></p>
     <p>Or reject it and provide closing remarks:</p>
@@ -180,7 +202,7 @@ function getTransporter() {
 }
 
 async function queueAssignmentEmail({ kind, item, project, assigneeId, assignedBy }) {
-  if (!['task', 'issue'].includes(kind)) throw new TypeError('Unsupported assignment email type');
+  if (kind !== 'task') throw new TypeError('Unsupported assignment email type');
   const [assigneeResult, stakeholderResult, assignedByResult] = await Promise.all([
     pool.query('SELECT id AS "_id", name, email FROM public.users WHERE id=$1 AND active', [String(assigneeId)]),
     pool.query(
@@ -257,6 +279,35 @@ async function queueAssignmentEmail({ kind, item, project, assigneeId, assignedB
        VALUES ($1, $2, $3)`,
       [emailId, String(project._id), String(item._id)]
     );
+    const attachmentRows = await client.query(
+      `SELECT id, filename, size_bytes, storage_key
+       FROM public.attachments
+       WHERE work_item_id=$1 AND project_id=$2
+       ORDER BY created_at, id`,
+      [String(item._id), String(project._id)]
+    );
+    const maxEmailBytes = Number(process.env.MAX_ATTACHMENT_EMAIL_MB || 10) * 1024 * 1024;
+    const totalBytes = attachmentRows.rows.reduce((sum, attachment) => sum + Number(attachment.size_bytes || 0), 0);
+    if (totalBytes <= maxEmailBytes) {
+      for (let index = 0; index < attachmentRows.rows.length; index += 1) {
+        await client.query(
+          `INSERT INTO public.email_attachments
+           (email_outbox_id, attachment_id, delivery_mode, position)
+           VALUES ($1,$2,'attached',$3)
+           ON CONFLICT (email_outbox_id, attachment_id) DO NOTHING`,
+          [emailId, attachmentRows.rows[index].id, index]
+        );
+      }
+    } else {
+      content.html += '<p><strong>Attachments:</strong> The task has attachments that are too large for email. <a href="' +
+        escapeHtml(`${(process.env.CLIENT_URL || 'http://localhost:3000').split(',')[0].trim().replace(/\/+$/, '')}/tasks`) +
+        '">Open TaskTracker to download them securely</a>.</p>';
+      content.text += `\nAttachments: Open TaskTracker to download them securely: ${(process.env.CLIENT_URL || 'http://localhost:3000').split(',')[0].trim().replace(/\/+$/, '')}/tasks`;
+      await client.query(
+        `UPDATE public.email_outbox SET payload=$2::jsonb WHERE id=$1`,
+        [emailId, JSON.stringify({ text: content.text, html: content.html })]
+      );
+    }
     await client.query(
       `UPDATE public.assignment_responses
        SET invalidated_at=now()
@@ -374,10 +425,24 @@ async function claimEmail() {
        ORDER BY recipient_type, email_snapshot`,
       [email.id]
     );
+    const attachmentRows = await client.query(
+      `SELECT a.filename,a.storage_key
+       FROM public.email_attachments ea
+       JOIN public.attachments a ON a.id=ea.attachment_id
+       WHERE ea.email_outbox_id=$1 AND ea.delivery_mode='attached'
+       ORDER BY ea.position`,
+      [email.id]
+    );
     await client.query('COMMIT');
     email.payload = typeof email.payload === 'string' ? JSON.parse(email.payload) : email.payload;
     email.to = recipients.rows.filter(recipient => recipient.recipient_type === 'to').map(recipient => recipient.email_snapshot);
     email.cc = recipients.rows.filter(recipient => recipient.recipient_type === 'cc').map(recipient => recipient.email_snapshot);
+    email.attachments = attachmentRows.rows.map((attachment) => ({
+      filename: attachment.filename,
+      path: attachment.storage_key.startsWith('/uploads/')
+        ? path.join(__dirname, '..', '..', 'uploads', attachment.storage_key.replace(/^\/uploads\//, ''))
+        : attachment.storage_key
+    })).filter((attachment) => fs.existsSync(attachment.path));
     return email;
   } catch (error) {
     await client.query('ROLLBACK');
@@ -397,7 +462,8 @@ async function deliverNextEmail(mailTransport) {
       cc: email.cc,
       subject: email.subject,
       text: email.payload.text,
-      html: email.payload.html
+      html: email.payload.html,
+      attachments: email.attachments || []
     });
   } catch (error) {
     const status = email.attempts >= MAX_ATTEMPTS ? 'failed' : 'pending';

@@ -51,7 +51,7 @@ test('assignment email content escapes HTML and strips header newlines from its 
   assert.match(content.html, /&lt;Alice&gt;/);
   assert.match(content.html, /&lt;Project&gt;/);
   assert.match(content.html, /&lt;Admin&gt;/);
-  assert.match(content.html, /https:\/\/tracker\.example\.com\/issues\?project=p1/);
+  assert.match(content.html, /https:\/\/tracker\.example\.com\/tasks\?project=p1/);
   assert.match(content.html, /Accept assignment/);
   assert.match(content.html, /Reject assignment/);
   assert.match(content.html, /accept-token/);

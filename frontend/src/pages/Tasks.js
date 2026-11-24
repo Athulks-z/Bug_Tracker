@@ -11,6 +11,41 @@ const PRIORITIES = ['Critical','High','Medium','Low']
 const STATUS_GROUPS = ['Open','In Progress','Completed/Closed','Rejected']
 const SEVERITIES = ['Showstopper','Critical','Major','Medium','Low','None']
 
+function MultiSelectDropdown({ label, options, value, onChange }) {
+  const selectedLabel = value.length === 0
+    ? `All ${label.toLowerCase()}`
+    : `${value.length} ${label.toLowerCase()} selected`
+
+  const toggleOption = (optionValue) => {
+    onChange(value.includes(optionValue)
+      ? value.filter((selected) => selected !== optionValue)
+      : [...value, optionValue])
+  }
+
+  return (
+    <details style={{ position:'relative',minWidth:0 }}>
+      <summary className="form-control" aria-label={`Filter by ${label.toLowerCase()}`}
+        style={{ display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer',listStyle:'none' }}>
+        <span>{selectedLabel}</span><i className="ti ti-chevron-down" aria-hidden="true" />
+      </summary>
+      <div style={{
+        position:'absolute',top:'calc(100% + 4px)',left:0,right:0,zIndex:20,
+        maxHeight:240,overflowY:'auto',padding:8,background:'#fff',
+        border:'1px solid #e2e8f0',borderRadius:8,boxShadow:'0 8px 20px rgba(15,23,42,0.12)'
+      }}>
+        {options.map((option) => (
+          <label key={option.value} style={{ display:'flex',alignItems:'center',gap:8,padding:'7px 4px',cursor:'pointer',fontSize:13 }}>
+            <input type="checkbox" checked={value.includes(option.value)}
+              onChange={() => toggleOption(option.value)} />
+            <span>{option.label}</span>
+          </label>
+        ))}
+        {options.length === 0 && <span style={{ display:'block',padding:8,color:'#64748b',fontSize:13 }}>No options available</span>}
+      </div>
+    </details>
+  )
+}
+
 const today = () => new Date().toISOString().slice(0, 10)
 
 export default function Tasks() {
@@ -239,22 +274,20 @@ export default function Tasks() {
           onChange={(event) => { setPage(1); setFilters((current) => ({ ...current, statusGroup:event.target.value })) }}>
           <option value="">All status groups</option>{STATUS_GROUPS.map((group) => <option key={group}>{group}</option>)}
         </select>
-        {showTeamControls && <select className="form-control" multiple size={3} aria-label="Filter by assignee"
+        {showTeamControls && <MultiSelectDropdown label="Assignees"
+          options={users.map((item) => ({ value:item._id,label:item.name }))}
           value={filters.assignee}
-          onChange={(event) => {
+          onChange={(assignee) => {
             setPage(1)
-            setFilters((current) => ({ ...current, assignee:Array.from(event.target.selectedOptions, (option) => option.value) }))
-          }}>
-          {users.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}
-        </select>}
-        <select className="form-control" multiple size={3} aria-label="Filter by type"
+            setFilters((current) => ({ ...current,assignee }))
+          }} />}
+        <MultiSelectDropdown label="Types"
+          options={types.map((type) => ({ value:type.value,label:type.label }))}
           value={filters.type}
-          onChange={(event) => {
+          onChange={(type) => {
             setPage(1)
-            setFilters((current) => ({ ...current, type:Array.from(event.target.selectedOptions, (option) => option.value) }))
-          }}>
-          {types.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
-        </select>
+            setFilters((current) => ({ ...current,type }))
+          }} />
       </div>
 
       <div className="card" style={{ overflow:'hidden' }}>

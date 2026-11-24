@@ -206,10 +206,19 @@ export default function Tasks() {
     try {
       const payload = { ...form }
       payload.startDate = backlogMode ? payload.startDate : (payload.startDate || today())
-      if (backlogMode) payload.mode = 'backlog'
       if (!payload.assignee) delete payload.assignee
       if (payload.type !== 'bug') payload.severity = ''
       if (payload.type !== 'other') payload.customTypeName = ''
+      if (editTask) {
+        const editableFields = showTeamControls
+          ? ['title','description','type','customTypeName','project','assignee','status','priority','startDate','endDate','severity','foundInVersion','fixedInVersion','targetRelease','sprint','estimatedHours','milestone']
+          : ['title','description','assignee','status','priority','startDate','endDate','milestone']
+        Object.keys(payload).forEach((field) => {
+          if (!editableFields.includes(field)) delete payload[field]
+        })
+      } else if (backlogMode) {
+        payload.mode = 'backlog'
+      }
       const result = editTask
         ? await api.put(`/tasks/${editTask._id}`, payload)
         : await api.post('/tasks', payload)
@@ -340,7 +349,7 @@ export default function Tasks() {
               </div>
               <RichTextEditor label="Description" value={form.description} onChange={(value) => setForm((current) => ({ ...current,description:value }))} />
 
-              <div className="form-group" style={{ marginTop:12 }}>
+              {(!editTask || showTeamControls) && <div className="form-group" style={{ marginTop:12 }}>
                 <label className="form-label">Type *</label>
                 <select className="form-control" value={form.type} onChange={(event) => setForm((current) => ({
                   ...current,type:event.target.value,
@@ -351,8 +360,8 @@ export default function Tasks() {
                   {types.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
                 </select>
                 {inlineErrors.type && <span style={{ color:'#dc2626',fontSize:12 }}>{inlineErrors.type}</span>}
-              </div>
-              {form.type === 'other' && (
+              </div>}
+              {(!editTask || showTeamControls) && form.type === 'other' && (
                 <div className="form-group">
                   <label className="form-label">Specify type *</label>
                   <input className="form-control" maxLength={100} value={form.customTypeName}
@@ -362,11 +371,11 @@ export default function Tasks() {
               )}
 
               <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:12 }}>
-                <div className="form-group"><label className="form-label">Project *</label>
+                {(!editTask || showTeamControls) && <div className="form-group"><label className="form-label">Project *</label>
                   <select className="form-control" disabled={backlogMode && Boolean(backlogProjectId)} value={form.project} onChange={(event) => setForm((current) => ({ ...current,project:event.target.value,milestone:'' }))}>
                     <option value="">Select project</option>{projects.map((project) => <option key={project._id} value={project._id}>{project.name}</option>)}
                   </select>{inlineErrors.project && <span style={{ color:'#dc2626',fontSize:12 }}>{inlineErrors.project}</span>}
-                </div>
+                </div>}
                 <div className="form-group"><label className="form-label">Assignee</label>
                   <select className="form-control" value={form.assignee} onChange={(event) => setForm((current) => ({ ...current,assignee:event.target.value }))}>
                     <option value="">Unassigned</option>{users.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}
@@ -380,7 +389,7 @@ export default function Tasks() {
                     {projectMilestones.map((milestone) => <option key={milestone.id} value={milestone.id}>{milestone.name}</option>)}
                   </select>
                 </div>}
-                {form.type === 'bug' && <div className="form-group"><label className="form-label">Severity</label>
+                {(!editTask || showTeamControls) && form.type === 'bug' && <div className="form-group"><label className="form-label">Severity</label>
                   <select className="form-control" value={form.severity} onChange={(event) => setForm((current) => ({ ...current,severity:event.target.value }))}>
                     <option value="">Select severity</option>{SEVERITIES.map((severity) => <option key={severity}>{severity}</option>)}
                   </select>

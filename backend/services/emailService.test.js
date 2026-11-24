@@ -6,7 +6,8 @@ const {
   buildAssignmentRejectedContent,
   buildTaskBlockedContent,
   buildProjectClosureContent,
-  buildStakeholderRecipients,
+  buildTaskBlockedRecipients,
+  getDeliveryFailure,
   SENDER_EMAIL
 } = require('./emailService');
 
@@ -100,34 +101,72 @@ test('blocked-task email names the blocker and escapes task details', () => {
   assert.doesNotMatch(content.html, /<Alice>/);
 });
 
-test('blocked-task notifications address every stakeholder and deduplicate sender', () => {
-  const recipients = buildStakeholderRecipients([
-    { id: 'one', name: 'One', email: 'one@example.com' },
-    { id: 'two', name: 'Two', email: 'two@example.com' },
-    { id: 'duplicate', name: 'Duplicate', email: 'ONE@example.com' },
-    { id: 'admin', name: 'Admin', email: SENDER_EMAIL }
-  ]);
+test('blocked-task notifications send to blocker and CC deduplicated stakeholders', () => {
+  const recipients = buildTaskBlockedRecipients(
+    { id: 'blocker', name: 'Blocker', email: 'blocker@example.com' },
+    [
+      { id: 'one', name: 'One', email: 'one@example.com' },
+      { id: 'two', name: 'Two', email: 'two@example.com' },
+      { id: 'duplicate', name: 'Duplicate', email: 'ONE@example.com' },
+      { id: 'blocker-duplicate', name: 'Blocker', email: 'BLOCKER@example.com' }
+    ]
+  );
 
-  assert.deepEqual(recipients.to.map(recipient => recipient.email), [
-    'one@example.com',
-    'two@example.com',
-    SENDER_EMAIL
-  ]);
-  assert.deepEqual(recipients.cc, []);
+  assert.deepEqual(recipients.to.map(recipient => recipient.email), ['blocker@example.com']);
+  assert.deepEqual(recipients.cc.map(recipient => recipient.email), ['one@example.com', 'two@example.com']);
 });
 
-test('blocked-task notification falls back to the sender when no stakeholders exist', () => {
-  const recipients = buildStakeholderRecipients([]);
+test('blocked-task notification has no CC when there are no stakeholders', () => {
+  const recipients = buildTaskBlockedRecipients(
+    { id: 'blocker', name: 'Blocker', email: 'blocker@example.com' },
+    []
+  );
 
-  assert.deepEqual(recipients.to.map(recipient => recipient.email), [SENDER_EMAIL]);
+  assert.deepEqual(recipients.to.map(recipient => recipient.email), ['blocker@example.com']);
   assert.deepEqual(recipients.cc, []);
 });
 
 test('blocked-task notification rejects stakeholders with invalid email addresses', () => {
   assert.throws(
-    () => buildStakeholderRecipients([{ email: 'not-an-email' }]),
+    () => buildTaskBlockedRecipients(
+      { id: 'blocker', email: 'blocker@example.com' },
+      [{ email: 'not-an-email' }]
+    ),
     /valid email/
   );
+});
+
+test('blocked-task notification requires a valid blocker email', () => {
+  assert.throws(
+    () => buildTaskBlockedRecipients({ id: 'blocker', email: '' }, []),
+    /blocked the task does not have a valid email/
+  );
+});
+
+test('permanent SMTP envelope rejections fail without retry and retain safe diagnostics', () => {
+  const failure = getDeliveryFailure({
+    code:'EENVELOPE',
+    responseCode:550,
+    response:'550 5.7.1 Message rejected for person@example.com'
+  }, 1);
+
+  assert.equal(failure.status, 'failed');
+  assert.match(failure.detail, /EENVELOPE: 550:/);
+  assert.match(failure.detail, /\[email\]/);
+  assert.doesNotMatch(failure.detail, /person@example\.com/);
+});
+
+test('temporary SMTP failures are retried up to the configured attempt limit', () => {
+  assert.equal(getDeliveryFailure({
+    code:'ETEMP',
+    responseCode:450,
+    response:'450 Mailbox temporarily unavailable'
+  }, 1).status, 'pending');
+  assert.equal(getDeliveryFailure({
+    code:'ETEMP',
+    responseCode:450,
+    response:'450 Mailbox temporarily unavailable'
+  }, 5).status, 'failed');
 });
 
 test('project appreciation email safely renders the closure summary, links, and remarks', () => {

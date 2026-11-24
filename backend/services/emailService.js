@@ -30,6 +30,22 @@ function safeHeaderValue(value) {
   return String(value || '').replace(/[\r\n\x00-\x1f\x7f]+/g, ' ').trim();
 }
 
+function getDeliveryFailure(error, attempts) {
+  const responseCode = Number(error.responseCode) || null;
+  const response = String(error.response || error.message || 'MailDeliveryError')
+    .replace(/[\r\n\x00-\x1f\x7f]+/g, ' ')
+    .replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, '[email]')
+    .slice(0, 500);
+  const permanent = responseCode >= 500;
+  return {
+    status: permanent || attempts >= MAX_ATTEMPTS ? 'failed' : 'pending',
+    responseCode,
+    detail: [error.code || error.name || 'MailDeliveryError', responseCode, response]
+      .filter(Boolean)
+      .join(': ')
+  };
+}
+
 function buildAssignmentRejectedContent({ kind, taskKey, title, projectName, rejectedBy, closingRemarks }) {
   const itemType = 'Task';
   const safeTitle = String(title || 'Untitled').replace(/[\r\n\x00-\x1f\x7f]+/g, ' ').trim();
@@ -80,10 +96,18 @@ function buildTaskBlockedContent({ taskKey, title, projectName, blockedBy }) {
   return { subject, text, html };
 }
 
-function buildStakeholderRecipients(stakeholders, senderEmail = SENDER_EMAIL) {
-  const to = [];
+function buildTaskBlockedRecipients(blocker, stakeholders) {
+  const blockerEmail = String(blocker?.email || '').trim();
+  if (!blockerEmail || !EMAIL_PATTERN.test(blockerEmail)) {
+    throw new Error('User who blocked the task does not have a valid email address');
+  }
+  const to = [{
+    userId: blocker._id || blocker.id || null,
+    email: blockerEmail,
+    name: blocker.name || ''
+  }];
   const cc = [];
-  const seen = new Set();
+  const seen = new Set([blockerEmail.toLowerCase()]);
   for (const stakeholder of stakeholders || []) {
     const email = String(stakeholder.email || '').trim();
     if (!email || !EMAIL_PATTERN.test(email)) {
@@ -92,19 +116,11 @@ function buildStakeholderRecipients(stakeholders, senderEmail = SENDER_EMAIL) {
     const key = email.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    to.push({
+    cc.push({
       userId: stakeholder.id || stakeholder._id || null,
       email,
       name: stakeholder.name || ''
     });
-  }
-  const senderKey = String(senderEmail || '').trim().toLowerCase();
-  if (senderEmail && !seen.has(senderKey)) {
-    cc.push({ userId: null, email: senderEmail, name: '' });
-  }
-  if (!to.length) {
-    to.push({ userId: null, email: senderEmail, name: '' });
-    cc.length = 0;
   }
   return { to, cc };
 }
@@ -357,12 +373,12 @@ async function queueTaskBlockedEmail({ task, project, blockedBy }) {
      ORDER BY u.name, u.id`,
     [String(project._id)]
   );
-  const { to, cc } = buildStakeholderRecipients(stakeholderResult.rows);
+  const { to, cc } = buildTaskBlockedRecipients(blockedBy, stakeholderResult.rows);
   const content = buildTaskBlockedContent({
     taskKey: task.taskKey,
     title: task.title,
     projectName: project.name || project.key,
-    blockedBy
+    blockedBy: blockedBy.name || blockedBy.email
   });
   const idempotencyKey = `task-blocked:${task._id}:${task.updatedAt || task.createdAt}`;
   const client = await pool.connect();
@@ -485,22 +501,22 @@ async function deliverNextEmail(mailTransport) {
       attachments: email.attachments || []
     });
   } catch (error) {
-    const status = email.attempts >= MAX_ATTEMPTS ? 'failed' : 'pending';
+    const failure = getDeliveryFailure(error, email.attempts);
     const delayMinutes = Math.min(60, 2 ** (email.attempts - 1));
     await pool.query(
       `UPDATE public.email_outbox
        SET status=$2, last_error=$3,
            next_attempt_at=now() + ($4 * interval '1 minute')
        WHERE id=$1`,
-      [email.id, status, error.code || error.name || 'MailDeliveryError', delayMinutes]
+      [email.id, failure.status, failure.detail, delayMinutes]
     );
     await pool.query(
       `UPDATE public.email_recipients
        SET delivery_status=$2
        WHERE email_outbox_id=$1`,
-      [email.id, status]
+      [email.id, failure.status]
     );
-    console.error(`Assignment email delivery failed (${email.id}):`, error.code || error.name);
+    console.error(`Assignment email delivery failed (${email.id}):`, failure.detail);
     return true;
   }
   await pool.query(
@@ -704,7 +720,8 @@ module.exports = {
   buildTaskBlockedContent,
   buildProjectClosureContent,
   queueProjectClosureEmail,
-  buildStakeholderRecipients,
+  buildTaskBlockedRecipients,
+  getDeliveryFailure,
   queueAssignmentEmail,
   queueTaskBlockedEmail,
   processPendingEmails,

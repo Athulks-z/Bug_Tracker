@@ -255,6 +255,25 @@ test('normalized PostgreSQL store preserves unified Task CRUD and concurrent ins
       comments:[], activity:[], timeLogs:[], attachments:[]
     });
     recordIds.tasks.push(assignmentTestTask._id);
+    const updateStatusResponse = await fetch(`${baseUrl}/${assignmentTestTask._id}`, {
+      method:'PUT',
+      headers:{
+        Authorization:`Bearer ${employeeToken}`,
+        'Content-Type':'application/json'
+      },
+      body:JSON.stringify({
+        title:'Task assignment permission test',
+        description:'',
+        assignee:user._id,
+        status:'In progress',
+        priority:'Medium',
+        startDate:'2026-11-24',
+        endDate:'',
+        milestone:''
+      })
+    });
+    assert.equal(updateStatusResponse.status, 200);
+    assert.equal((await updateStatusResponse.json()).status, 'In progress');
     const assignToNonMemberResponse = await fetch(`${baseUrl}/${assignmentTestTask._id}`, {
       method:'PUT',
       headers:{

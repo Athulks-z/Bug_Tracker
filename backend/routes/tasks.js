@@ -57,7 +57,7 @@ async function addBlockedEmailNotification(response, task, project, user) {
       queued: await queueTaskBlockedEmail({
         task,
         project,
-        blockedBy: user.name || user.email
+        blockedBy: user
       })
     };
   } catch (error) {
@@ -340,7 +340,8 @@ router.put('/:id', auth, async (req, res) => {
     }
     res.json(response);
   } catch (err) {
-    res.status(500).json({ message: 'Unable to update task' });
+    console.error('Unable to update task:', err.message);
+    res.status(err.status || 500).json({ message: err.status ? err.message : 'Unable to update task' });
   }
 });
 

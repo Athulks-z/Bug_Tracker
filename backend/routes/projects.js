@@ -1,7 +1,10 @@
 const router = require('express').Router();
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 const { auth, adminOnly } = require('../middleware/auth');
 const {
-  isAdministrator, canManageProject, canViewAllProjects, canCreateWorkItem
+  isAdministrator, canCloseProject, canManageProject, canViewAllProjects, canCreateWorkItem
 } = require('../middleware/roles');
 const { store, hydrateProject, publicUser } = require('../services/data');
 const {
@@ -17,21 +20,45 @@ const {
 } = require('../services/projectQueries');
 const pool = require('../config/db');
 const { dateOnly } = require('../utils/dateOnly');
+const { loadConfig } = require('../config');
+const {
+  sanitizeClosingRemarks,
+  validateClosureLinks,
+  validateClosureUpload
+} = require('../utils/projectClosureValidation');
+const {
+  countOpenProjectTasks,
+  getProjectClosureHistory,
+  closeProject,
+  reopenProject,
+  findClosureAttachment
+} = require('../services/projectClosures');
 
-const PROJECT_STATUS_LABELS = {
-  planning:'Planning',
-  active:'In Progress',
-  on_hold:'On Hold',
-  completed:'Completed',
-  archived:'Archived',
-  cancelled:'Cancelled'
-};
+const config = loadConfig();
+const CLOSURE_UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads', 'project-closures');
+if (!fs.existsSync(CLOSURE_UPLOAD_DIR)) fs.mkdirSync(CLOSURE_UPLOAD_DIR, { recursive:true });
+
+let projectStatusLabelsPromise;
+
+function getProjectStatusLabels() {
+  if (!projectStatusLabelsPromise) {
+    projectStatusLabelsPromise = pool.query(
+      'SELECT status,label FROM public.project_statuses WHERE active=true'
+    ).then(({ rows }) => new Map(rows.map((row) => [row.status,row.label])))
+      .catch((error) => {
+        projectStatusLabelsPromise = null;
+        throw error;
+      });
+  }
+  return projectStatusLabelsPromise;
+}
 
 async function hydrateProjectWithStakeholders(project) {
   const result = await hydrateProject(project);
   if (!result) return null;
   result.stakeholders = await getProjectStakeholders(project._id);
-  result.statusLabel = PROJECT_STATUS_LABELS[result.status] || result.status;
+  const statusLabels = await getProjectStatusLabels();
+  result.statusLabel = statusLabels.get(result.status) || result.status;
   result.createdBy = publicUser(await store.findById('users', project.createdBy));
   const { rows:milestones } = await pool.query(
     `SELECT m.id,m.name,m.sort_order,m.due_date,m.owner_user_id,u.name AS owner_name
@@ -171,6 +198,159 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
+router.post('/:id/closure-uploads', auth, async (req,res) => {
+  let storageKey;
+  try {
+    const project = await store.findById('projects',req.params.id);
+    if (!project || !await findVisibleProject(req.user,project._id)) return res.status(404).json({ message:'Not found' });
+    if (!canCloseProject(req.user,project)) return res.status(403).json({ message:'You cannot close this project' });
+    if (project.status === 'closed') return res.status(409).json({ message:'Closed projects cannot be changed' });
+    const { filename,data,mime } = req.body || {};
+    const validated = validateClosureUpload({
+      filename,data,mime,maxBytes:config.maxAttachmentMb * 1024 * 1024
+    });
+    if (!validated.valid) return res.status(400).json({ message:validated.message });
+
+    const expired = await pool.query(
+      `DELETE FROM public.project_closure_uploads
+       WHERE project_id=$1 AND expires_at<=now() RETURNING storage_key`,
+      [String(project._id)]
+    );
+    await Promise.all(expired.rows.map((item) => removeClosureStorageFile(item.storage_key)));
+    const countResult = await pool.query(
+      `SELECT count(*)::int AS total FROM public.project_closure_uploads
+       WHERE project_id=$1 AND uploaded_by_user_id=$2 AND expires_at>now()`,
+      [String(project._id),String(req.user._id)]
+    );
+    if (countResult.rows[0].total >= config.maxAttachmentsPerTask) {
+      return res.status(400).json({ message:`A maximum of ${config.maxAttachmentsPerTask} closure attachments is allowed` });
+    }
+
+    const storedName = `${crypto.randomUUID()}.${validated.extension}`;
+    storageKey = `/uploads/project-closures/${storedName}`;
+    await fs.promises.writeFile(closureStoragePath(storageKey),validated.buffer,{ flag:'wx' });
+    const { rows } = await pool.query(
+      `INSERT INTO public.project_closure_uploads
+       (project_id,uploaded_by_user_id,filename,mime,size_bytes,storage_key)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING id,filename,mime,size_bytes`,
+      [String(project._id),String(req.user._id),validated.originalName,validated.mime,validated.buffer.length,storageKey]
+    );
+    res.status(201).json({
+      id:rows[0].id,filename:rows[0].filename,mime:rows[0].mime,sizeBytes:Number(rows[0].size_bytes)
+    });
+  } catch (error) {
+    if (storageKey) await removeClosureStorageFile(storageKey);
+    console.error('Unable to stage project closure attachment:',error.message);
+    res.status(500).json({ message:'Unable to upload project closure attachment' });
+  }
+});
+
+router.delete('/:id/closure-uploads/:uploadId', auth, async (req,res) => {
+  try {
+    const project = await store.findById('projects',req.params.id);
+    if (!project || !await findVisibleProject(req.user,project._id)) return res.status(404).json({ message:'Not found' });
+    if (!canCloseProject(req.user,project)) return res.status(403).json({ message:'You cannot close this project' });
+    const { rows } = await pool.query(
+      `DELETE FROM public.project_closure_uploads
+       WHERE id=$1 AND project_id=$2 AND uploaded_by_user_id=$3
+       RETURNING storage_key`,
+      [String(req.params.uploadId),String(project._id),String(req.user._id)]
+    );
+    if (!rows.length) return res.status(404).json({ message:'Staged attachment not found' });
+    await removeClosureStorageFile(rows[0].storage_key);
+    res.json({ message:'Attachment removed' });
+  } catch (error) {
+    console.error('Unable to remove staged project closure attachment:',error.message);
+    res.status(500).json({ message:'Unable to remove staged attachment' });
+  }
+});
+
+router.post('/:id/close', auth, async (req,res) => {
+  try {
+    const project = await store.findById('projects',req.params.id);
+    if (!project || !await findVisibleProject(req.user,project._id)) return res.status(404).json({ message:'Not found' });
+    if (!canCloseProject(req.user,project)) return res.status(403).json({ message:'You cannot close this project' });
+    if (project.status === 'closed') {
+      const { getProjectClosureHistory:loadHistory } = require('../services/projectClosures');
+      const history = await loadHistory(project._id);
+      return res.json({ alreadyClosed:true,closure:history.find((item) => !item.reopenedAt) || history[0] });
+    }
+    const remarks = sanitizeClosingRemarks(req.body?.closingRemarks);
+    if (!remarks.valid) return res.status(400).json({ message:remarks.message,field:'closingRemarks' });
+    const validatedLinks = validateClosureLinks(req.body?.links);
+    if (!validatedLinks.valid) return res.status(400).json({ message:validatedLinks.message,field:'links' });
+    if (req.body?.uploadIds !== undefined
+      && (!Array.isArray(req.body.uploadIds) || req.body.uploadIds.some((id) => typeof id !== 'string'))) {
+      return res.status(400).json({ message:'Closure attachments are invalid' });
+    }
+    const result = await closeProject({
+      projectId:project._id,user:req.user,
+      closingRemarksHtml:remarks.closingRemarksHtml,
+      closingRemarksText:remarks.plainText,
+      links:validatedLinks.links,
+      uploadIds:req.body?.uploadIds || [],
+      blockWithOpenTasks:config.blockCloseWithOpenTasks
+    });
+    res.json(result);
+  } catch (error) {
+    if (error.status) return res.status(error.status).json({ message:error.message,code:error.code });
+    console.error('Unable to close project:',error.message);
+    res.status(500).json({ message:'Unable to close project' });
+  }
+});
+
+router.post('/:id/reopen', auth, async (req,res) => {
+  try {
+    if (!canViewAllProjects(req.user)) return res.status(403).json({ message:'Only Managers and Admins can reopen projects' });
+    if (!await findVisibleProject(req.user,req.params.id)) return res.status(404).json({ message:'Not found' });
+    const remarks = sanitizeClosingRemarks(req.body?.reopeningRemarks);
+    if (!remarks.valid) return res.status(400).json({ message:remarks.message,field:'reopeningRemarks' });
+    const result = await reopenProject({
+      projectId:req.params.id,user:req.user,reopeningRemarks:remarks.plainText
+    });
+    res.json(result);
+  } catch (error) {
+    if (error.status) return res.status(error.status).json({ message:error.message,code:error.code });
+    console.error('Unable to reopen project:',error.message);
+    res.status(500).json({ message:'Unable to reopen project' });
+  }
+});
+
+router.get('/:id/closure-attachments/:attachmentId/download', auth, async (req,res) => {
+  try {
+    if (!await findVisibleProject(req.user,req.params.id)) return res.status(404).json({ message:'Not found' });
+    const attachment = await findClosureAttachment(req.user,req.params.id,req.params.attachmentId);
+    if (!attachment) return res.status(404).json({ message:'Attachment not found' });
+    const filePath = closureStoragePath(attachment.storage_key);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ message:'Attachment file not found' });
+    res.setHeader('Content-Type',attachment.mime || 'application/octet-stream');
+    res.setHeader('X-Content-Type-Options','nosniff');
+    res.setHeader('Content-Disposition',`attachment; filename="${String(attachment.filename).replace(/["\r\n]/g,'_')}"`);
+    res.sendFile(filePath);
+  } catch (error) {
+    console.error('Unable to download project closure attachment:',error.message);
+    res.status(500).json({ message:'Unable to download project closure attachment' });
+  }
+});
+
+function closureStoragePath(storageKey) {
+  const prefix = '/uploads/project-closures/';
+  if (!String(storageKey).startsWith(prefix)) throw new Error('Invalid project closure storage key');
+  const root = path.resolve(CLOSURE_UPLOAD_DIR);
+  const filePath = path.resolve(root,String(storageKey).slice(prefix.length));
+  if (!filePath.startsWith(`${root}${path.sep}`)) throw new Error('Invalid project closure storage path');
+  return filePath;
+}
+
+async function removeClosureStorageFile(storageKey) {
+  try {
+    await fs.promises.unlink(closureStoragePath(storageKey));
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+}
+
 router.post('/', auth, adminOnly, async (req, res) => {
   try {
     const {
@@ -240,6 +420,7 @@ router.post('/:id/backlog/:taskId/move', auth, async (req, res) => {
     if (!project || !await findVisibleProject(req.user, project._id)) {
       return res.status(404).json({ message:'Not found' });
     }
+    if (project.status === 'closed') return res.status(409).json({ message:'Closed projects are read-only' });
     if (!canManageProject(req.user, project) && !canViewAllProjects(req.user)
       && !canCreateWorkItem(req.user, project)) {
       return res.status(403).json({ message:'You cannot move backlog items in this project' });
@@ -272,6 +453,15 @@ router.post('/:id/backlog/:taskId/move', auth, async (req, res) => {
     }
     await client.query('BEGIN');
     transactionOpen = true;
+    const { rows:lockedProjectRows } = await client.query(
+      'SELECT status FROM public.projects WHERE id=$1 FOR UPDATE',
+      [project._id]
+    );
+    if (!lockedProjectRows.length || lockedProjectRows[0].status === 'closed') {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(409).json({ message:'Closed projects are read-only' });
+    }
     const { rows } = await client.query(
       `UPDATE public.work_items w
        SET assignee_user_id=$3,start_date=$4,due_date=$5,milestone_id=NULLIF($6,''),
@@ -334,7 +524,19 @@ router.get('/:id', auth, async (req, res) => {
     const project = await hydrateProjectWithStakeholders(await store.findById('projects', req.params.id));
     const progress = await projectProgress(req.user, req.params.id);
     const backlog = await listProjectBacklog(req.user, req.params.id);
-    res.json({ ...project, ...progress, backlog });
+    const [closureHistory,openTaskCount] = await Promise.all([
+      getProjectClosureHistory(req.params.id),
+      countOpenProjectTasks(pool,req.params.id)
+    ]);
+    res.json({
+      ...project,...progress,backlog,closureHistory,openTaskCount,
+      blockCloseWithOpenTasks:config.blockCloseWithOpenTasks,
+      closureAttachmentLimits:{
+        maxMb:config.maxAttachmentMb,
+        maxFiles:config.maxAttachmentsPerTask
+      },
+      permissions:{ canClose:canCloseProject(req.user,project),canReopen:canViewAllProjects(req.user) }
+    });
   } catch (err) {
     console.error('Unable to load project details:', err.message);
     res.status(500).json({ message:'Unable to load project details' });
@@ -346,6 +548,7 @@ router.put('/:id', auth, async (req, res) => {
     const existing = await store.findById('projects', req.params.id);
     if (!existing) return res.status(404).json({ message:'Not found' });
     if (!await findVisibleProject(req.user, existing._id)) return res.status(404).json({ message:'Not found' });
+    if (existing.status === 'closed') return res.status(409).json({ message:'Closed projects are read-only' });
     const { stakeholders } = req.body || {};
     if (stakeholders !== undefined && !await validateProjectStakeholders(stakeholders)) {
       return res.status(400).json({ message:'One or more project stakeholders are missing or inactive' });
@@ -415,6 +618,9 @@ router.put('/:id', auth, async (req, res) => {
     if (stakeholders !== undefined) await replaceProjectStakeholders(req.params.id, stakeholders, req.user._id);
     res.json(await hydrateProjectWithStakeholders(await store.findById('projects', project._id)));
   } catch (err) {
+    if (err.message?.includes('Closed projects are read-only')) {
+      return res.status(409).json({ message:'Closed projects are read-only' });
+    }
     if (err.code === 'MILESTONE_HAS_WORK_ITEMS') return res.status(409).json({ message:err.message });
     if (err.code === 'MILESTONE_DATE_ORDER') return res.status(400).json({ message:err.message });
     if (err.code === '23505') return res.status(409).json({ message:'Project name or key already exists' });
@@ -426,6 +632,8 @@ router.put('/:id', auth, async (req, res) => {
 router.delete('/:id', auth, adminOnly, async (req, res) => {
   try {
     if (!await findVisibleProject(req.user, req.params.id)) return res.status(404).json({ message:'Not found' });
+    const project = await store.findById('projects',req.params.id);
+    if (project?.status === 'closed') return res.status(409).json({ message:'Reopen the project before deleting it' });
     await store.remove('projects', req.params.id);
     res.json({ message:'Deleted' });
   } catch (err) {

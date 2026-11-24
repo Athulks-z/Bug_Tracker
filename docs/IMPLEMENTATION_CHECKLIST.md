@@ -5,6 +5,8 @@
 **Baseline:** TaskTracker Product Requirements Document v1.2 and TaskTracker Software Requirements Specification v1.2, both drafts dated 19 November 2026.
 **Database decision:** PostgreSQL is the runtime database. Current API routes use normalized PostgreSQL tables; the converted JSONB source is preserved as `app_records_legacy`, and Google Sheets remains unchanged. This persistence cutover does not imply that all v1.2 product requirements are complete.
 
+> **Historical snapshot:** The status tables and repository findings below were reviewed before the later unified-Task, project/backlog, and authorization work. Statements that PostgreSQL, rich-text descriptions, task attachments, task types, Reject/Reopen, or project detail/backlog are absent are stale. Use [PENDING_IMPLEMENTATION_TASKS.md](./PENDING_IMPLEMENTATION_TASKS.md) for the 24 November 2026 revalidation and current remaining-work status; retain this file as the v1.2 requirements baseline, not a current code inventory.
+
 ## 1. Review method and status meanings
 
 This review covers all 150 numbered PRD requirements and all 201 numbered SRS functional requirements, 4 data-integrity requirements, and 20 defined non-functional requirements. Requirement rows below group IDs only when they share a feature area and implementation status; each ID is enumerated in the ID/priority column and inherits the row's description, status, evidence, remaining work, and test needs.

@@ -22,3 +22,12 @@ test('administrator and manager project list queries are unrestricted', () => {
     assert.deepEqual(where.values, ['planning']);
   }
 });
+
+test('closed projects can be queried explicitly and excluded from active project selectors', () => {
+  const closed = projectListWhere({ _id:'admin',role:'admin' },{ status:'closed' });
+  assert.equal(closed.clause,'TRUE AND p.status=$1');
+  assert.deepEqual(closed.values,['closed']);
+  const activeSelector = projectListWhere({ _id:'admin',role:'admin' },{ excludeClosed:true });
+  assert.equal(activeSelector.clause,"TRUE AND p.status <> 'closed'");
+  assert.deepEqual(activeSelector.values,[]);
+});

@@ -14,25 +14,62 @@ This backlog turns the remaining gaps from the implementation comparison into as
 
 | ID | Task | Priority | Status | Depends on |
 |---|---|---:|---|---|
-| P-01 | Revalidate the pending backlog against current code | P0 | Not started | — |
-| P-02 | Define and test the resource authorization matrix | P0 | Not started | P-01 |
+| P-01 | Revalidate the pending backlog against current code | P0 | Done | — |
+| P-02 | Define and test the resource authorization matrix | P0 | In progress | P-01 |
 | P-03 | Complete authentication, account recovery, and session revocation | P1 | Not started | P-02 |
 | P-04 | Deliver department administration and policy workflows | P2 | Not started | P-02 |
-| P-05 | Complete append-only audit events and authorized audit access | P1 | Not started | P-02 |
-| P-06 | Complete project hub, project membership, and project APIs | P1 | Not started | P-02 |
-| P-07 | Implement milestone lifecycle and project completion metrics | P2 | Not started | P-06 |
+| P-05 | Complete append-only audit events and authorized audit access | P1 | In progress | P-02 |
+| P-06 | Complete project hub, project membership, and project APIs | P1 | In progress | P-02 |
+| P-07 | Implement milestone lifecycle and project completion metrics | P2 | In progress | P-06 |
 | P-08 | Integrate sprint and release workflows with projects | P2 | Not started | P-06 |
-| P-09 | Implement backlog workflows | P2 | Not started | P-06, P-02 |
+| P-09 | Implement backlog workflows | P2 | In progress | P-06, P-02 |
 | P-10 | Implement work-item blockers and saved filters | P3 | Not started | P-09 |
-| P-11 | Standardize API list contracts and complete API documentation | P1 | Not started | P-01 |
-| P-12 | Complete task comments and templates rich-text support | P3 | Not started | P-01 |
-| P-13 | Harden attachment lifecycle, validation, and storage | P1 | Not started | P-01, P-02 |
-| P-14 | Deliver rejection and reopen email notifications | P1 | Not started | P-01 |
-| P-15 | Add organization timezone support and date-boundary handling | P2 | Not started | P-01 |
-| P-16 | Complete portfolio analytics, reports, and dashboard drill-down | P2 | Not started | P-02, P-06, P-11 |
-| P-17 | Complete notification preferences and event coverage | P2 | Not started | P-02, P-14 |
+| P-11 | Standardize API list contracts and complete API documentation | P1 | In progress | P-01 |
+| P-12 | Complete task comments and templates rich-text support | P3 | In progress | P-01 |
+| P-13 | Harden attachment lifecycle, validation, and storage | P1 | In progress | P-01, P-02 |
+| P-14 | Deliver rejection and reopen email notifications | P1 | In progress | P-01 |
+| P-15 | Add organization timezone support and date-boundary handling | P2 | In progress | P-01 |
+| P-16 | Complete portfolio analytics, reports, and dashboard drill-down | P2 | In progress | P-02, P-06, P-11 |
+| P-17 | Complete notification preferences and event coverage | P2 | In progress | P-02, P-14 |
 | P-18 | Add operational readiness: backups, observability, and performance | P1 | Not started | P-01 |
 | P-19 | Complete accessibility, localization, and end-to-end quality gates | P2 | Not started | P-01 |
+
+## Current revalidation — 24 November 2026
+
+The status changes above reflect repository implementation evidence, not completion of the full acceptance criteria. The detailed v1.2 matrix in [IMPLEMENTATION_CHECKLIST.md](./IMPLEMENTATION_CHECKLIST.md) predates the current code and is now explicitly marked historical.
+
+### Verified delivered behavior
+
+- PostgreSQL is the runtime store; migrations 001–009 are applied in the configured database. The Sheets store remains for legacy/migration support.
+- Task and Issue are unified in the Task UI/API with legacy issue URL redirects; configurable types, required type/custom “Other”, sanitized rich-text task descriptions, date defaults/display, attachments, task identifiers, Reject/Reopen, and server-side task/dashboard visibility are present.
+- Project list/detail routes and UI are mounted. Project queries are server-filtered by owner/member/stakeholder visibility, with Manager/Admin access; project owners are made members. Project creation/edit includes status, priority, dates, owner, members, stakeholders, and ordered milestones.
+- Project detail exposes visible-task progress/distribution, milestone completion, and project backlog. Backlog-mode task creation, project-scoped backlog listing, and transactional move-to-task with assignment email are present.
+- Project list pagination and `X-Total-Count` are implemented while preserving its array response shape. OpenAPI includes project/backlog paths and key fields.
+- Current verification: backend suite **39 passed, 0 failed**; frontend production build succeeded; OpenAPI YAML parsed. PostgreSQL integration tests exercise project persistence and backlog exclusion/listing. These do not replace route-level permission, UI, or end-to-end coverage.
+
+### Remaining gaps and boundaries
+
+- **P-02/P-05:** Role helpers and scoped task/project query tests exist, but there is no complete resource × action authorization matrix. The audit table has limited assignment-response events; full append-only lifecycle coverage and an authorized audit API/UI are missing.
+- **P-03/P-04:** Password recovery/session revocation and department administration are not delivered. Department schema exists, but no complete department API/UI/policy workflow was verified.
+- **P-06:** Project hub is implemented, but broader membership APIs, full member workflow authorization coverage, and end-to-end project access tests remain.
+- **P-07:** Milestone create/edit/order and progress are present through project create/update. Standalone milestone lifecycle/archive/status transitions and comprehensive metrics tests remain.
+- **P-08:** Sprint and release surfaces exist, but their full project-detail integration, authorization matrix, and lifecycle/relationship tests remain.
+- **P-09:** Backlog create/list/move is present. Ranking/reordering, bulk operations, trainee proposal/approval, and their concurrency/authorization tests are not implemented.
+- **P-10:** Blocker and saved-filter tables exist in the schema, but full APIs, UI, validation, and visibility tests remain.
+- **P-11:** OpenAPI YAML is syntactically valid and project/backlog endpoints were added. API schemas, error cases, pagination contracts, and contract tests remain incomplete.
+- **P-12:** Task description rich text is present; rich-text comments and templates are not complete.
+- **P-13:** Task upload, size/count and blocked-extension checks, authenticated download/delete, and assignment-email attachment/link handling exist. MIME/content verification, public upload-route/storage hardening, staging/orphan cleanup, and complete security/authorization coverage remain.
+- **P-14:** Reject/Reopen in-app notifications and assignment-response email behavior exist. The Task Reject/Reopen endpoints do not yet queue lifecycle emails to creator, assignee, and CC recipients.
+- **P-15:** Date-only serialization avoids timezone shifts and task start-date defaulting is implemented. Organization-timezone boundaries for due-today/overdue/dashboard behavior are not defined or verified.
+- **P-16/P-17:** Task dashboard summaries are server-scoped and drill-down is supported, but portfolio reports/exports and notification preferences/read-all/event coverage remain.
+- **P-18/P-19:** No verified backup/restore exercise, performance/observability acceptance, full accessibility/localization audit, or end-to-end suite.
+
+### Product decisions still needed
+
+- Confirm whether backlog proposals require trainee/manager approval, and whether ordering/bulk backlog operations are in scope.
+- Define milestone archive/status-transition behavior and the authoritative project completion formula.
+- Define organization timezone and due-date boundary rules.
+- Confirm attachment content-scanning requirements and whether lifecycle emails for task Reject/Reopen should go to creator, assignee, and project stakeholders.
 
 ## Work items
 

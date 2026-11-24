@@ -15,6 +15,12 @@ test('loads safe local defaults and a 12-hour token lifetime', () => {
   assert.equal(config.allowSelfRegistration, false);
   assert.equal(config.maxUploadMb, 5);
   assert.equal(config.databasePoolMax, 10);
+  assert.equal(config.blockCloseWithOpenTasks, false);
+});
+
+test('validates the open-task project closure policy flag', () => {
+  assert.equal(loadConfig({ ...validEnv, BLOCK_CLOSE_WITH_OPEN_TASKS:'true' }).blockCloseWithOpenTasks, true);
+  assert.throws(() => loadConfig({ ...validEnv, BLOCK_CLOSE_WITH_OPEN_TASKS:'yes' }), /BLOCK_CLOSE_WITH_OPEN_TASKS/);
 });
 
 test('accepts a comma-separated client origin allow-list', () => {

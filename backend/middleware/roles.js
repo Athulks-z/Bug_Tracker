@@ -41,6 +41,12 @@ function canManageProject(user, project) {
     || (isManager(user) && projectHasUser(project, String(user?._id || ''), false));
 }
 
+function canCloseProject(user, project) {
+  if (!project) return false;
+  const ownerId = String(typeof project.owner === 'object' && project.owner !== null ? project.owner._id : project.owner || '');
+  return isAdministrator(user) || isManager(user) || ownerId === String(user?._id || '');
+}
+
 function canCreateWorkItem(user, project) {
   if (!project) return false;
   return isAdministrator(user)
@@ -92,6 +98,7 @@ module.exports = {
   hasProjectManagementAccess,
   canReadProject,
   canManageProject,
+  canCloseProject,
   canCreateWorkItem,
   canCreateBacklog,
   canUpdateWorkItem,

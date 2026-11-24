@@ -5,6 +5,7 @@ const {
   isSuperAdministrator,
   canReadProject,
   canManageProject,
+  canCloseProject,
   canCreateWorkItem,
   canCreateBacklog,
   canUpdateWorkItem
@@ -38,6 +39,10 @@ test('project access and work item permissions follow the approved role matrix',
   assert.equal(canManageProject(manager, project), true);
   assert.equal(canManageProject({ ...manager, _id:'manager' }, { ...project, members:[{ _id:'manager' }] }), true);
   assert.equal(canManageProject(employee, project), false);
+  assert.equal(canCloseProject({ role:'employee',_id:'owner' }, project), true);
+  assert.equal(canCloseProject(employee, project), false);
+  assert.equal(canCloseProject(manager, project), true);
+  assert.equal(canCloseProject(admin, project), true);
   assert.equal(canCreateWorkItem(manager, project), true);
   assert.equal(canCreateWorkItem(employee, project), true);
   assert.equal(canCreateWorkItem(trainee, project), false);

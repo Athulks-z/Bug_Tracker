@@ -197,6 +197,9 @@ router.post('/', auth, async (req, res) => {
     if (!title || !project) return res.status(400).json({ message: 'Title and project required' });
     const validatedType = await validateTaskType(type, customTypeName);
     const projectRecord = await store.findById('projects', project);
+    if (projectRecord?.status === 'closed') {
+      return res.status(409).json({ message:'Closed projects are read-only' });
+    }
     if (isBacklog ? !canCreateBacklog(req.user, projectRecord) : !canCreateWorkItem(req.user, projectRecord)) {
       return res.status(403).json({ message: 'You cannot create tasks in this project' });
     }
@@ -258,6 +261,7 @@ router.put('/:id', auth, async (req, res) => {
     const existing = await findVisibleTask(req.user, req.params.id);
     if (!existing) return res.status(404).json({ message: 'Not found' });
     const project = await store.findById('projects', existing.project);
+    if (project?.status === 'closed') return res.status(409).json({ message:'Tasks in closed projects are read-only' });
     if (!canUpdateWorkItem(req.user, existing, project)) {
       return res.status(403).json({ message: 'You cannot update this task' });
     }
@@ -290,6 +294,7 @@ router.put('/:id', auth, async (req, res) => {
     }
     if (update.project !== undefined) {
       const targetProject = await store.findById('projects', update.project);
+      if (targetProject?.status === 'closed') return res.status(409).json({ message:'Closed projects are read-only' });
       if (!canReadProject(req.user, targetProject)) {
         return res.status(403).json({ message: 'You cannot move a task to that project' });
       }
@@ -344,6 +349,7 @@ router.post('/:id/attachments', auth, async (req, res) => {
     const task = await findVisibleTask(req.user, req.params.id);
     if (!task) return res.status(404).json({ message: 'Not found' });
     const project = await store.findById('projects', task.project);
+    if (project?.status === 'closed') return res.status(409).json({ message:'Tasks in closed projects are read-only' });
     if (!canUpdateWorkItem(req.user, task, project)) return res.status(403).json({ message: 'You cannot attach files to this task' });
     const { filename, data, mime } = req.body || {};
     if (typeof filename !== 'string' || !filename.trim() || typeof data !== 'string') {
@@ -396,6 +402,7 @@ router.delete('/attachments/:id', auth, async (req, res) => {
     if (!attachment) return res.status(404).json({ message: 'Attachment not found' });
     const task = await findVisibleTask(req.user, attachment.work_item_id);
     const project = await store.findById('projects', attachment.project_id);
+    if (project?.status === 'closed') return res.status(409).json({ message:'Tasks in closed projects are read-only' });
     const canDelete = canManageProject(req.user, project)
       || String(task?.assignee?._id || task?.assignee || '') === String(req.user._id)
       || String(attachment.uploaded_by_user_id) === String(req.user._id);
@@ -426,6 +433,7 @@ router.post('/:id/reject', auth, async (req, res) => {
     const task = await findVisibleTask(req.user, req.params.id);
     if (!task) return res.status(404).json({ message: 'Not found' });
     const project = await store.findById('projects', task.project);
+    if (project?.status === 'closed') return res.status(409).json({ message:'Tasks in closed projects are read-only' });
     if (!canUpdateWorkItem(req.user, task, project)) return res.status(403).json({ message: 'You cannot reject this task' });
     const remarks = String(req.body?.closingRemarks || '').trim();
     if (remarks.length < 3) return res.status(400).json({ message: 'Closing remarks must be at least 3 characters' });
@@ -456,6 +464,7 @@ router.post('/:id/reopen', auth, async (req, res) => {
     const task = await findVisibleTask(req.user, req.params.id);
     if (!task) return res.status(404).json({ message: 'Not found' });
     const project = await store.findById('projects', task.project);
+    if (project?.status === 'closed') return res.status(409).json({ message:'Tasks in closed projects are read-only' });
     if (!canUpdateWorkItem(req.user, task, project)) return res.status(403).json({ message: 'You cannot reopen this task' });
     const saved = await store.update('tasks', task._id, {
       status: 'Open',
@@ -483,6 +492,7 @@ router.post('/:id/comments', auth, async (req, res) => {
     const task = await findVisibleTask(req.user, req.params.id);
     if (!task) return res.status(404).json({ message: 'Not found' });
     const project = await store.findById('projects', task.project);
+    if (project?.status === 'closed') return res.status(409).json({ message:'Tasks in closed projects are read-only' });
     if (!canReadProject(req.user, project)) return res.status(403).json({ message: 'You cannot comment on this task' });
     const text = String(req.body?.text || '').trim();
     if (!text) return res.status(400).json({ message: 'Comment text is required' });
@@ -505,6 +515,7 @@ router.delete('/:id', auth, async (req, res) => {
     const existing = await findVisibleTask(req.user, req.params.id);
     if (!existing) return res.status(404).json({ message: 'Not found' });
     const project = await store.findById('projects', existing.project);
+    if (project?.status === 'closed') return res.status(409).json({ message:'Tasks in closed projects are read-only' });
     if (!canManageProject(req.user, project)) {
       return res.status(403).json({ message: 'Only administrators and project managers can delete tasks' });
     }

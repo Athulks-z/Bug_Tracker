@@ -125,7 +125,7 @@ export default function Tasks() {
   }, [form.project])
 
   useEffect(() => {
-    api.get('/projects').then(setProjects).catch((error) => toast.error(error.message))
+    api.get('/projects', { excludeClosed:true }).then(setProjects).catch((error) => toast.error(error.message))
     api.get('/users', { taskAssignees:true }).then(setUsers).catch(() => {})
     api.get('/tasks/types').then(setTypes).catch(() => {})
   }, [])

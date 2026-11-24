@@ -63,6 +63,10 @@ function loadConfig(env = process.env) {
   if (!Number.isInteger(maxAttachmentsPerTask) || maxAttachmentsPerTask < 1 || maxAttachmentsPerTask > 100) {
     throw new Error('MAX_ATTACHMENTS_PER_TASK must be an integer between 1 and 100');
   }
+  const blockCloseWithOpenTasksValue = String(env.BLOCK_CLOSE_WITH_OPEN_TASKS || 'false').toLowerCase();
+  if (!['true','false'].includes(blockCloseWithOpenTasksValue)) {
+    throw new Error('BLOCK_CLOSE_WITH_OPEN_TASKS must be true or false');
+  }
 
   return {
     nodeEnv,
@@ -77,7 +81,8 @@ function loadConfig(env = process.env) {
     maxUploadMb,
     maxAttachmentMb,
     maxAttachmentsPerTask,
-    jsonLimit: `${Math.ceil(maxUploadMb * 1.4)}mb`
+    blockCloseWithOpenTasks: blockCloseWithOpenTasksValue === 'true',
+    jsonLimit: `${Math.ceil(Math.max(maxUploadMb, maxAttachmentMb) * 1.4)}mb`
   };
 }
 

@@ -176,11 +176,12 @@ export default function AdminProjects() {
                       <div style={{ fontWeight:600, color:'#1a202c', fontSize:14 }}>{p.name}</div>
                       <div style={{ fontSize:11, color:'#94a3b8', marginTop:1 }}>{p.members?.length||0} members</div>
                       <div style={{ fontSize:11, color:'#94a3b8', marginTop:1 }}>{p.stakeholders?.length||0} email stakeholders</div>
+                      <div style={{ fontSize:11, color:p.status === 'closed' ? '#9a3412' : '#64748b', marginTop:3 }}>{p.statusLabel || (p.status === 'active' ? 'In Progress' : p.status)}</div>
                     </div>
                   </div>
                   <div style={{ display:'flex', gap:4 }}>
-                    <button onClick={()=>openEdit(p)} style={{ background:'none', border:'1px solid #e2e8f0', borderRadius:6, padding:'5px 8px', fontSize:13, color:'#64748b' }}><i className="ti ti-edit" /></button>
-                    {!membershipOnly && <button onClick={()=>remove(p._id)} style={{ background:'none', border:'1px solid #fecaca', borderRadius:6, padding:'5px 8px', fontSize:13, color:'#ef4444' }}><i className="ti ti-trash" /></button>}
+                    {p.status !== 'closed' && <button onClick={()=>openEdit(p)} aria-label="Edit project" style={{ background:'none', border:'1px solid #e2e8f0', borderRadius:6, padding:'5px 8px', fontSize:13, color:'#64748b' }}><i className="ti ti-edit" /></button>}
+                    {!membershipOnly && p.status !== 'closed' && <button onClick={()=>remove(p._id)} aria-label="Delete project" style={{ background:'none', border:'1px solid #fecaca', borderRadius:6, padding:'5px 8px', fontSize:13, color:'#ef4444' }}><i className="ti ti-trash" /></button>}
                   </div>
                 </div>
                 {p.description && <p style={{ fontSize:13, color:'#64748b', marginBottom:12, lineHeight:1.5 }}>{p.description}</p>}

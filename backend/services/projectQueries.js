@@ -23,6 +23,9 @@ function projectListWhere(user, query = {}) {
     values.push(query.status === 'in_progress' ? 'active' : query.status);
     clauses.push(`p.status=$${values.length}`);
   }
+  if (String(query.excludeClosed).toLowerCase() === 'true') {
+    clauses.push("p.status <> 'closed'");
+  }
   return { clause:clauses.join(' AND '), values };
 }
 

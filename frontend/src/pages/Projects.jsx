@@ -10,17 +10,18 @@ export default function Projects() {
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
+  const [statusFilter, setStatusFilter] = useState('')
 
   useEffect(() => {
     setLoading(true)
-    api.getWithMeta('/projects', { page, limit:100 })
+    api.getWithMeta('/projects', { page, limit:100,status:statusFilter })
       .then((result) => {
         setProjects(result.data)
         setTotal(result.total)
       })
       .catch((error) => toast.error(error.message))
       .finally(() => setLoading(false))
-  }, [page])
+  }, [page,statusFilter])
 
   const statusLabel = (project) => project.statusLabel
     || (project.status === 'active' ? 'In Progress' : project.status)
@@ -35,6 +36,19 @@ export default function Projects() {
         {['super_admin','admin','manager'].includes(user?.role) &&
           <Link className="btn btn-primary" to="/admin/projects"><i className="ti ti-settings" /> Manage Projects</Link>}
       </div>
+      <label style={{ display:'block',maxWidth:240,marginBottom:16 }}>
+        <span className="sr-only">Filter projects by status</span>
+        <select className="form-control" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1) }}>
+          <option value="">All statuses</option>
+          <option value="planning">Planning</option>
+          <option value="active">In Progress</option>
+          <option value="on_hold">On Hold</option>
+          <option value="completed">Completed</option>
+          <option value="archived">Archived</option>
+          <option value="cancelled">Cancelled</option>
+          <option value="closed">Closed</option>
+        </select>
+      </label>
 
       {loading ? <div className="empty-state" aria-live="polite">Loading projects…</div> : (
         projects.length === 0

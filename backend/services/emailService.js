@@ -538,6 +538,150 @@ async function processPendingEmails() {
   }
 }
 
+function buildProjectClosureContent({ project, closure, clientUrl, secureDownloadLink }) {
+  const projectName = String(project.name || project.key || 'Project');
+  const safeProjectName = escapeHtml(projectName);
+  const projectLink = `${String(clientUrl || 'http://localhost:3000').replace(/\/+$/, '')}/projects/${encodeURIComponent(project.id || project._id)}`;
+  const snapshot = closure.snapshot || {};
+  const remarksHtml = sanitizeHtml(closure.closingRemarksHtml || '', {
+    allowedTags:['p','br','strong','b','em','i','u','h1','h2','h3','ol','ul','li','a','blockquote'],
+    allowedAttributes:{ a:['href','title','target','rel'] },
+    transformTags:{
+      a:(tagName,attribs) => ({
+        tagName,
+        attribs:{ ...attribs,target:'_blank',rel:'noopener noreferrer' }
+      })
+    }
+  });
+  const links = Array.isArray(closure.links) ? closure.links : [];
+  const linksHtml = links.length
+    ? `<ul>${links.map((link) => `<li><a href="${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(link.label || link.url)}</a></li>`).join('')}</ul>`
+    : '<p>None</p>';
+  const attachmentsHtml = secureDownloadLink
+    ? `<p>Project closure files are available securely in TaskTracker: <a href="${escapeHtml(projectLink)}">Open project</a>.</p>`
+    : '';
+  const closedDate = closure.closedAt ? new Date(closure.closedAt).toLocaleDateString('en-US', { timeZone:'UTC' }) : '';
+  const summary = `${Number(snapshot.completedTasks || 0)} completed of ${Number(snapshot.totalTasks || 0)} tasks; ${Number(snapshot.completionPercent || 0)}% completion; ${Number(snapshot.durationDays || 0)} days.`;
+  const subject = `[TaskTracker] Project closed: ${String(projectName).replace(/[\r\n\x00-\x1f\x7f]+/g, ' ').trim()}`;
+  const text = [
+    `Thank you for closing ${projectName}.`,
+    `Status: Closed`,
+    `Closed by: ${closure.closedByName || 'Project team member'}`,
+    `Closed date: ${closedDate}`,
+    `Summary: ${summary}`,
+    '',
+    'Closing remarks:',
+    String(closure.closingRemarksText || ''),
+    '',
+    'Links:',
+    ...links.map((link) => `${link.label ? `${link.label}: ` : ''}${link.url}`),
+    attachmentsHtml ? `Closure attachments: ${projectLink}` : '',
+    `Project: ${projectLink}`
+  ].filter(Boolean).join('\n');
+  const html = `<p>Thank you for the work that went into completing <strong>${safeProjectName}</strong>.</p>
+    <ul>
+      <li><strong>Status:</strong> Closed</li>
+      <li><strong>Closed by:</strong> ${escapeHtml(closure.closedByName || 'Project team member')}</li>
+      <li><strong>Closed date:</strong> ${escapeHtml(closedDate)}</li>
+      <li><strong>Summary:</strong> ${escapeHtml(summary)}</li>
+    </ul>
+    <p><strong>Closing remarks:</strong></p>${remarksHtml}
+    <p><strong>Links:</strong></p>${linksHtml}${attachmentsHtml}
+    <p><a href="${escapeHtml(projectLink)}">Open project in TaskTracker</a></p>`;
+  return { subject, text, html };
+}
+
+async function queueProjectClosureEmail({ project, closure, recipients, attachments, transactionClient }) {
+  const to = [];
+  const cc = [];
+  const seenTo = new Set();
+  const seenAll = new Set();
+  for (const recipient of recipients.to || []) {
+    const email = String(recipient.email || '').trim();
+    const key = email.toLowerCase();
+    if (!email || !EMAIL_PATTERN.test(email) || seenTo.has(key)) continue;
+    seenTo.add(key);
+    seenAll.add(key);
+    to.push({ ...recipient, email });
+  }
+  for (const recipient of recipients.cc || []) {
+    const email = String(recipient.email || '').trim();
+    const key = email.toLowerCase();
+    if (!email || !EMAIL_PATTERN.test(email) || seenAll.has(key)) continue;
+    seenAll.add(key);
+    cc.push({ ...recipient, email });
+  }
+  if (!to.length) {
+    console.error('Project closure appreciation email was not queued: no valid To recipient');
+    return false;
+  }
+
+  const maxEmailBytes = Number(process.env.MAX_ATTACHMENT_EMAIL_MB || 10) * 1024 * 1024;
+  const totalBytes = (attachments || []).reduce((total, attachment) => total + Number(attachment.sizeBytes || 0), 0);
+  const secureDownloadLink = totalBytes > maxEmailBytes;
+  const content = buildProjectClosureContent({
+    project, closure,
+    clientUrl:(process.env.CLIENT_URL || 'http://localhost:3000').split(',')[0].trim(),
+    secureDownloadLink
+  });
+  const ownsClient = !transactionClient;
+  const client = transactionClient || await pool.connect();
+  try {
+    if (ownsClient) await client.query('BEGIN');
+    const { rows } = await client.query(
+      `INSERT INTO public.email_outbox (event_type,subject,payload,status,idempotency_key)
+       VALUES ('project_closed',$1,$2::jsonb,'pending',$3)
+       ON CONFLICT (idempotency_key) DO NOTHING
+       RETURNING id`,
+      [content.subject, JSON.stringify({ text:content.text,html:content.html }),
+        `project-closure:${closure.id}:appreciation`]
+    );
+    if (!rows.length) {
+      if (ownsClient) await client.query('COMMIT');
+      return true;
+    }
+    const emailId = rows[0].id;
+    for (const recipient of to) {
+      await client.query(
+        `INSERT INTO public.email_recipients
+         (email_outbox_id,user_id,email_snapshot,name_snapshot,recipient_type,delivery_status)
+         VALUES ($1,$2,$3,$4,'to','pending')
+         ON CONFLICT (email_outbox_id,email_snapshot,recipient_type) DO NOTHING`,
+        [emailId,recipient.userId || null,recipient.email,recipient.name || '']
+      );
+    }
+    for (const recipient of cc) {
+      await client.query(
+        `INSERT INTO public.email_recipients
+         (email_outbox_id,user_id,email_snapshot,name_snapshot,recipient_type,delivery_status)
+         VALUES ($1,$2,$3,$4,'cc','pending')
+         ON CONFLICT (email_outbox_id,email_snapshot,recipient_type) DO NOTHING`,
+        [emailId,recipient.userId || null,recipient.email,recipient.name || '']
+      );
+    }
+    await client.query(
+      `INSERT INTO public.email_resources (email_outbox_id,project_scope_id,target_project_id)
+       VALUES ($1,$2,$2)`,
+      [emailId,String(project.id || project._id)]
+    );
+    for (const [index, attachment] of (attachments || []).entries()) {
+      await client.query(
+        `INSERT INTO public.email_attachments (email_outbox_id,attachment_id,delivery_mode,position)
+         VALUES ($1,$2,$3,$4)
+         ON CONFLICT (email_outbox_id,attachment_id) DO NOTHING`,
+        [emailId,attachment.id,secureDownloadLink ? 'secure_link' : 'attached',index]
+      );
+    }
+    if (ownsClient) await client.query('COMMIT');
+    return true;
+  } catch (error) {
+    if (ownsClient) await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    if (ownsClient) client.release();
+  }
+}
+
 function startEmailWorker() {
   if (workerTimer) return;
   void processPendingEmails().catch(error => {
@@ -558,6 +702,8 @@ module.exports = {
   buildAssignmentContent,
   buildAssignmentRejectedContent,
   buildTaskBlockedContent,
+  buildProjectClosureContent,
+  queueProjectClosureEmail,
   buildStakeholderRecipients,
   queueAssignmentEmail,
   queueTaskBlockedEmail,

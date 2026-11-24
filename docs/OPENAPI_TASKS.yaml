@@ -22,6 +22,17 @@ paths:
           schema:
             type: integer
             minimum: 1
+        - in: query
+          name: status
+          description: Filter by status, including closed to show closed projects.
+          schema:
+            type: string
+            enum: [planning, active, on_hold, completed, archived, cancelled, closed]
+        - in: query
+          name: excludeClosed
+          description: Omit closed projects from task and backlog project selectors.
+          schema:
+            type: boolean
     post:
       summary: Create a project with milestones
       description: Administrator access is required. The selected owner is automatically included as a project member.
@@ -37,6 +48,96 @@ paths:
       description: Returns project metadata, ordered milestone progress, visible task distribution, and project backlog. Progress excludes backlog and Rejected tasks.
     put:
       summary: Update project metadata and milestones
+  /api/projects/{id}/close:
+    post:
+      summary: Close a project
+      description: Requires closeProject permission (project owner, manager, or administrator). Closing remarks are mandatory. The close is idempotent and queues one appreciation email after commit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [closingRemarks]
+              properties:
+                closingRemarks:
+                  type: string
+                  minLength: 10
+                  maxLength: 10000
+                links:
+                  type: array
+                  maxItems: 10
+                  items:
+                    $ref: '#/components/schemas/ProjectClosureLink'
+                uploadIds:
+                  type: array
+                  maxItems: 10
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Project closed or already closed.
+        '400':
+          description: Closing remarks, links, or attachments are invalid.
+        '403':
+          description: The user lacks closeProject permission.
+        '409':
+          description: Closing is blocked by open tasks when BLOCK_CLOSE_WITH_OPEN_TASKS is enabled.
+  /api/projects/{id}/reopen:
+    post:
+      summary: Reopen a closed project
+      description: Manager or administrator access is required. Reopening remarks are mandatory and closure history remains available.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reopeningRemarks]
+              properties:
+                reopeningRemarks:
+                  type: string
+                  minLength: 10
+                  maxLength: 10000
+  /api/projects/{id}/closure-uploads:
+    post:
+      summary: Stage a project closure attachment
+      description: Requires closeProject permission. The file is validated and held privately until the close transaction.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, data, mime]
+              properties:
+                filename:
+                  type: string
+                mime:
+                  type: string
+                data:
+                  type: string
+                  format: byte
+      responses:
+        '201':
+          description: Attachment staged successfully.
+        '400':
+          description: File type, content, count, or size is invalid.
+  /api/projects/{id}/closure-uploads/{uploadId}:
+    delete:
+      summary: Remove a staged closure attachment
+  /api/projects/{id}/closure-attachments/{attachmentId}/download:
+    get:
+      summary: Download a project closure attachment
+      description: Requires authenticated project visibility. The file is sent as an attachment.
+      responses:
+        '200':
+          description: Attachment bytes.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
   /api/projects/{id}/backlog:
     get:
       summary: List backlog items for a visible project
@@ -279,3 +380,14 @@ components:
               owner:
                 type: string
                 nullable: true
+    ProjectClosureLink:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: HTTP or HTTPS URL only.
+        label:
+          type: string
+          maxLength: 100

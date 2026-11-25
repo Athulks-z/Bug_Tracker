@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import api from '../api'
 import { useAuth } from '../context/AuthContext'
@@ -22,6 +22,39 @@ export default function TaskDetail() {
   const [remarks, setRemarks] = useState('')
   const [comment, setComment] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [attachmentAction, setAttachmentAction] = useState('')
+  const [preview, setPreview] = useState(null)
+  const previewDialogRef = useRef(null)
+  const previewReturnFocusRef = useRef(null)
+
+  useEffect(() => {
+    if (!preview) return undefined
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setPreview(null)
+        return
+      }
+      if (event.key !== 'Tab' || !previewDialogRef.current) return
+      const focusable = previewDialogRef.current.querySelectorAll('button:not(:disabled), iframe')
+      if (!focusable.length) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    previewDialogRef.current?.querySelector('button')?.focus()
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      URL.revokeObjectURL(preview.url)
+      previewReturnFocusRef.current?.focus()
+    }
+  }, [preview])
 
   const load = async () => {
     setLoading(true)
@@ -96,6 +129,55 @@ export default function TaskDetail() {
     }
   }
 
+  const attachmentPreviewType = (attachment) => {
+    const mime = String(attachment.mime || '').toLowerCase().split(';')[0]
+    if (['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(mime)) return mime
+    if (mime === 'application/pdf') return mime
+    const extension = String(attachment.filename || '').split('.').pop().toLowerCase()
+    if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(extension)) return `image/${extension === 'jpg' ? 'jpeg' : extension}`
+    if (extension === 'pdf') return 'application/pdf'
+    return ''
+  }
+
+  const downloadAttachment = async (attachment) => {
+    setAttachmentAction(attachment._id)
+    try {
+      const blob = await api.download(`/tasks/attachments/${encodeURIComponent(attachment._id)}/download`)
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = attachment.filename || 'attachment'
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (error) {
+      toast.error(error.message || 'Unable to download attachment')
+    } finally {
+      setAttachmentAction('')
+    }
+  }
+
+  const previewAttachment = async (attachment, trigger) => {
+    const mime = attachmentPreviewType(attachment)
+    if (!mime) return
+    previewReturnFocusRef.current = trigger
+    setAttachmentAction(attachment._id)
+    try {
+      const blob = await api.download(`/tasks/attachments/${encodeURIComponent(attachment._id)}/download`)
+      setPreview({
+        attachmentId: attachment._id,
+        filename: attachment.filename || 'Attachment preview',
+        mime,
+        url: URL.createObjectURL(blob)
+      })
+    } catch (error) {
+      toast.error(error.message || 'Unable to preview attachment')
+    } finally {
+      setAttachmentAction('')
+    }
+  }
+
   const postComment = async () => {
     if (!comment.trim()) return
     try {
@@ -164,17 +246,36 @@ export default function TaskDetail() {
             {task.issueNumber != null && <div><strong style={{ fontSize:12,color:'#64748b' }}>Legacy issue number</strong><div>{task.issueNumber}</div></div>}
 
             <div>
-              <strong style={{ fontSize:12,color:'#64748b' }}>Attachments</strong>
+              <strong style={{ fontSize:12,color:'#64748b' }}>Attachments ({(task.attachments || []).length})</strong>
               <div style={{ display:'grid',gap:6,marginTop:8 }}>
-                {(task.attachments || []).map((attachment) => (
-                  <div key={attachment._id} style={{ display:'flex',alignItems:'center',gap:6 }}>
-                    <a style={{ flex:1,fontSize:13,color:'#2563eb' }}
-                      href={`/api/tasks/attachments/${attachment._id}/download`}>
-                      {attachment.filename}
-                    </a>
-                    {canAct && <button className="btn-icon" title="Delete attachment" onClick={() => removeAttachment(attachment._id)}><i className="ti ti-trash" /></button>}
-                  </div>
-                ))}
+                {(task.attachments || []).length ? (task.attachments || []).map((attachment) => {
+                  const previewType = attachmentPreviewType(attachment)
+                  const isBusy = attachmentAction === attachment._id
+                  const size = Number(attachment.size)
+                  const sizeLabel = Number.isFinite(size) && size >= 0
+                    ? size < 1024
+                      ? `${size} B`
+                      : size < 1024 * 1024
+                        ? `${Math.round(size / 1024)} KB`
+                        : `${(size / (1024 * 1024)).toFixed(1)} MB`
+                    : ''
+                  return (
+                    <div key={attachment._id} className="task-attachment-item">
+                      <div className="task-attachment-info">
+                        <i className="ti ti-paperclip" aria-hidden="true" />
+                        <span title={attachment.filename}>{attachment.filename}</span>
+                        {sizeLabel && <small>{sizeLabel}</small>}
+                      </div>
+                      <div className="task-attachment-actions">
+                        {previewType
+                          ? <button type="button" className="btn-icon" title={`Preview ${attachment.filename}`} aria-label={`Preview ${attachment.filename}`} disabled={isBusy} onClick={(event) => previewAttachment(attachment, event.currentTarget)}><i className="ti ti-eye" /></button>
+                          : <span className="task-attachment-preview-unavailable" title="Preview isn't supported for this file type">No preview</span>}
+                        <button type="button" className="btn-icon" title={`Download ${attachment.filename}`} aria-label={`Download ${attachment.filename}`} disabled={isBusy} onClick={() => downloadAttachment(attachment)}><i className="ti ti-download" /></button>
+                        {canAct && <button type="button" className="btn-icon" title="Delete attachment" aria-label={`Delete ${attachment.filename}`} disabled={isBusy} onClick={() => removeAttachment(attachment._id)}><i className="ti ti-trash" /></button>}
+                      </div>
+                    </div>
+                  )
+                }) : <p style={{ color:'#94a3b8',fontSize:12,marginTop:8 }}>No attachments</p>}
               </div>
               {canAct && <input type="file" multiple disabled={uploading} onChange={(event) => uploadFiles(event.target.files)} style={{ marginTop:10 }} />}
             </div>
@@ -190,6 +291,34 @@ export default function TaskDetail() {
           ))}
         </div>
       </div>
+
+      {preview && (
+        <div className="attachment-preview-backdrop" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setPreview(null)
+        }}>
+          <section ref={previewDialogRef} className="attachment-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="attachment-preview-title">
+            <header className="attachment-preview-header">
+              <div>
+                <h2 id="attachment-preview-title">Attachment preview</h2>
+                <p title={preview.filename}>{preview.filename}</p>
+              </div>
+              <button type="button" className="btn-icon" aria-label="Close preview" onClick={() => setPreview(null)}><i className="ti ti-x" /></button>
+            </header>
+            <div className="attachment-preview-content">
+              {preview.mime === 'application/pdf'
+                ? <iframe title={`Preview of ${preview.filename}`} src={preview.url} sandbox="" />
+                : <img src={preview.url} alt={preview.filename} />}
+            </div>
+            <footer className="attachment-preview-footer">
+              <button type="button" className="btn btn-ghost" onClick={() => setPreview(null)}>Close</button>
+              <button type="button" className="btn btn-primary" onClick={() => downloadAttachment({
+                _id: preview.attachmentId,
+                filename: preview.filename
+              })}>Download</button>
+            </footer>
+          </section>
+        </div>
+      )}
 
       {rejectOpen && (
         <div className="modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) setRejectOpen(false) }}>

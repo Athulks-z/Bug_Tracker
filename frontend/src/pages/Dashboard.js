@@ -59,6 +59,29 @@ export default function Dashboard() {
   const [filters, setFilters] = useState({ project:'', assignee:'', type:'' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const filterRelationships = data?.filterRelationships || [];
+  const employeeIdForFilter = (assignee) => assignee === 'me' ? user?._id : assignee;
+
+  const filteredProjects = useMemo(() => {
+    if (!filters.assignee) return projects;
+    const employeeId = employeeIdForFilter(filters.assignee);
+    const projectIds = new Set(filterRelationships
+      .filter((relationship) => relationship.employeeId === employeeId)
+      .map((relationship) => relationship.projectId));
+    return projects.filter((project) => projectIds.has(project._id));
+  }, [filters.assignee, filterRelationships, projects, user?._id]);
+
+  const filteredUsers = useMemo(() => {
+    if (!filters.project) return users;
+    const employeeIds = new Set(filterRelationships
+      .filter((relationship) => relationship.projectId === filters.project)
+      .map((relationship) => relationship.employeeId));
+    return users.filter((item) => employeeIds.has(item._id));
+  }, [filters.project, filterRelationships, users]);
+
+  const canSelectMyTasks = !filters.project
+    || filterRelationships.some((relationship) =>
+      relationship.projectId === filters.project && relationship.employeeId === user?._id);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -81,7 +104,7 @@ export default function Dashboard() {
     if (!teamView) return;
     Promise.all([
       api.get('/projects'),
-      api.get('/users'),
+      api.get('/users', { taskAssignees:true }),
       api.get('/tasks/types')
     ]).then(([projectItems, userItems, typeItems]) => {
       setProjects(projectItems);
@@ -119,17 +142,37 @@ export default function Dashboard() {
         <div style={{ display:'flex',gap:12,flexWrap:'wrap',marginBottom:18 }}>
           <label style={{ minWidth:180 }}>
             <span className="sr-only">Filter dashboard by project</span>
-            <select className="form-control" value={filters.project} onChange={(event) => setFilters((current) => ({ ...current,project:event.target.value }))}>
+            <select className="form-control" value={filters.project} onChange={(event) => {
+              const project = event.target.value;
+              setFilters((current) => {
+                if (!project || !current.assignee) return { ...current,project };
+                const employeeId = employeeIdForFilter(current.assignee);
+                const isRelated = filterRelationships.some((relationship) =>
+                  relationship.projectId === project && relationship.employeeId === employeeId);
+                return { ...current,project,assignee:isRelated ? current.assignee : '' };
+              });
+            }}>
               <option value="">All projects</option>
-              {projects.map((project) => <option key={project._id} value={project._id}>{project.name}</option>)}
+              {filteredProjects.map((project) => <option key={project._id} value={project._id}>{project.name}</option>)}
+              {filters.assignee && filteredProjects.length === 0 && <option disabled value="__no_projects">No projects for this employee</option>}
             </select>
           </label>
           <label style={{ minWidth:180 }}>
             <span className="sr-only">Filter dashboard by employee</span>
-            <select className="form-control" value={filters.assignee} onChange={(event) => setFilters((current) => ({ ...current,assignee:event.target.value }))}>
+            <select className="form-control" value={filters.assignee} onChange={(event) => {
+              const assignee = event.target.value;
+              setFilters((current) => {
+                if (!current.project || !assignee) return { ...current,assignee };
+                const employeeId = employeeIdForFilter(assignee);
+                const isRelated = filterRelationships.some((relationship) =>
+                  relationship.projectId === current.project && relationship.employeeId === employeeId);
+                return { ...current,assignee,project:isRelated ? current.project : '' };
+              });
+            }}>
               <option value="">All assignees</option>
-              <option value="me">My tasks</option>
-              {users.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}
+              {canSelectMyTasks && <option value="me">My tasks</option>}
+              {filteredUsers.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}
+              {filters.project && filteredUsers.length === 0 && !canSelectMyTasks && <option disabled value="__no_employees">No employees in this project</option>}
             </select>
           </label>
           <label style={{ minWidth:180 }}>
@@ -139,6 +182,10 @@ export default function Dashboard() {
               {types.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
             </select>
           </label>
+          <button type="button" className="btn btn-ghost" disabled={!filters.project && !filters.assignee}
+            onClick={() => setFilters((current) => ({ ...current,project:'',assignee:'' }))}>
+            Clear filters
+          </button>
         </div>
       )}
 

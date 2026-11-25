@@ -4,6 +4,7 @@ const { randomUUID } = require('crypto');
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const { PostgresStore } = require('./postgresStore');
+const pool = require('../config/db');
 const {
   queryTasks,
   queryTaskCounts,
@@ -75,6 +76,10 @@ test('normalized PostgreSQL store preserves unified Task CRUD and concurrent ins
       startDate:'2026-11-24',
       targetEndDate:'2026-12-24'
     });
+    await pool.query(
+      'INSERT INTO public.project_stakeholders (project_id,user_id) VALUES ($1,$2)',
+      [projectId, manager._id]
+    );
     const savedProject = await store.findById('projects', projectId);
     assert.deepEqual(savedProject.members, [user._id]);
     assert.equal(savedProject.createdBy, manager._id);
@@ -246,6 +251,23 @@ test('normalized PostgreSQL store preserves unified Task CRUD and concurrent ins
     assert.equal(managerDashboard.byStatus.reduce((sum, item) => sum + item.count, 0), managerList.total);
     assert.equal(managerDashboard.summary.rejected, await queryTaskCounts(manager, { statusGroup:'Rejected' }));
     assert.equal(Object.prototype.hasOwnProperty.call(managerDashboard, 'teamWidgets'), true);
+    assert.equal(managerDashboard.filterRelationships.some((relation) =>
+      relation.projectId === projectId && relation.employeeId === user._id), true);
+    assert.equal(managerDashboard.filterRelationships.some((relation) =>
+      relation.projectId === projectId && relation.employeeId === trainee._id), true);
+    assert.equal(managerDashboard.filterRelationships.some((relation) =>
+      relation.projectId === projectId && relation.employeeId === manager._id), true);
+    const employeeProjectDashboard = await queryTaskDashboard(manager, {
+      project:projectId,
+      assignee:user._id
+    });
+    assert.equal(employeeProjectDashboard.summary.total, 1);
+    assert.equal(employeeProjectDashboard.recentTasks.every((task) => task.assignee._id === user._id), true);
+    assert.equal(employeeProjectDashboard.byProject.every((project) => project.id === projectId), true);
+    assert.equal(employeeProjectDashboard.summary.total, await queryTaskCounts(manager, {
+      project:projectId,
+      assignee:user._id
+    }));
     const adminList = await queryTasks({ _id:user._id, role:'admin' }, { limit:200 });
     assert.equal(adminList.total, managerList.total);
 

@@ -325,6 +325,21 @@ export default function ProjectDetail() {
       )}
 
       <section className="card" style={{ padding:20,marginTop:16 }}>
+        <h2 style={{ fontSize:16,marginBottom:12 }}>Project Members</h2>
+        {(project.members || []).length === 0
+          ? <p style={{ color:'#64748b',fontSize:13 }}>No members assigned.</p>
+          : <div style={{ display:'flex',flexWrap:'wrap',gap:12 }}>
+            {project.members.map((person) => (
+              <div key={person._id} style={{ display:'flex',gap:8,alignItems:'center',border:'1px solid #e2e8f0',borderRadius:8,padding:'8px 12px' }}>
+                <div className="avatar" aria-hidden="true">{person.name?.slice(0,1) || '?'}</div>
+                <span style={{ fontSize:13 }}>{person.name}</span>
+                <small style={{ color:'#64748b' }}>Member</small>
+              </div>
+            ))}
+          </div>}
+      </section>
+
+      <section className="card" style={{ padding:20,marginTop:16 }}>
         <h2 style={{ fontSize:16,marginBottom:12 }}>Project Stakeholders</h2>
         {(project.stakeholders || []).length === 0
           ? <p style={{ color:'#64748b',fontSize:13 }}>No stakeholders assigned.</p>

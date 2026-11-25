@@ -1,5 +1,6 @@
 const pool = require('../config/db');
 const { buildTaskVisibilityFilter } = require('../middleware/taskVisibility');
+const { buildProjectVisibilityFilter } = require('../middleware/projectVisibility');
 const { isAdministrator, isManager } = require('../middleware/roles');
 const { hydrateTask } = require('./data');
 const { dateOnly } = require('../utils/dateOnly');
@@ -266,6 +267,8 @@ async function queryBusyTaskAssigneeIds(user) {
 
 async function queryTaskDashboard(user, query = {}) {
   const where = buildTaskWhere(user, query);
+  const teamView = isAdministrator(user) || isManager(user);
+  const projectVisibility = buildProjectVisibilityFilter(user, 'p');
   const joins = `FROM public.work_items w
     JOIN public.tasks t ON t.work_item_id=w.id
     LEFT JOIN public.work_types wt ON wt.value=t.task_type
@@ -326,15 +329,42 @@ async function queryTaskDashboard(user, query = {}) {
       ORDER BY n.created_at DESC LIMIT 10`,
       [String(user?._id || ''), ...notificationWhere.values])
   ]);
-  const teamView = isAdministrator(user) || isManager(user);
   let workload = [];
+  let filterRelationships = [];
   if (teamView) {
-    const result = await pool.query(`SELECT w.assignee_user_id AS id,
-      COALESCE(u.name,'Unassigned') AS label,count(*)::int AS count
-      ${joins} LEFT JOIN public.users u ON u.id=w.assignee_user_id
-      WHERE ${where.clause}
-      GROUP BY w.assignee_user_id,u.name ORDER BY count DESC,label`, where.values);
-    workload = result.rows;
+    const [workloadResult, relationshipResult] = await Promise.all([
+      pool.query(`SELECT w.assignee_user_id AS id,
+        COALESCE(u.name,'Unassigned') AS label,count(*)::int AS count
+        ${joins} LEFT JOIN public.users u ON u.id=w.assignee_user_id
+        WHERE ${where.clause}
+        GROUP BY w.assignee_user_id,u.name ORDER BY count DESC,label`, where.values),
+      pool.query(
+        `SELECT DISTINCT p.id AS "projectId", u.id AS "employeeId", u.name AS "employeeName"
+         FROM public.projects p
+         JOIN public.users u ON u.active=true
+         WHERE ${projectVisibility.clause}
+           AND (
+             p.owner_user_id=u.id
+             OR EXISTS (
+               SELECT 1 FROM public.project_members pm
+               WHERE pm.project_id=p.id AND pm.user_id=u.id AND pm.active=true
+             )
+             OR EXISTS (
+               SELECT 1 FROM public.project_stakeholders ps
+               WHERE ps.project_id=p.id AND ps.user_id=u.id
+             )
+             OR EXISTS (
+               SELECT 1 FROM public.work_items w
+               JOIN public.tasks t ON t.work_item_id=w.id AND t.is_backlog=false
+               WHERE w.project_id=p.id AND w.assignee_user_id=u.id
+             )
+           )
+         ORDER BY p.id,u.name,u.id`,
+        projectVisibility.values
+      )
+    ]);
+    workload = workloadResult.rows;
+    filterRelationships = relationshipResult.rows;
   }
   const recentTasks = recent.items.map((task) => ({
     _id:task._id,title:task.title,status:task.status,type:task.type,
@@ -358,6 +388,7 @@ async function queryTaskDashboard(user, query = {}) {
     })),
     recentActivity:activity.rows,
     notifications:notifications.rows,
+    ...(teamView ? { filterRelationships } : {}),
     ...(teamView ? { teamWidgets:{ workloadByAssignee:workload } } : {})
   };
 }

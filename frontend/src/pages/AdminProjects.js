@@ -313,7 +313,7 @@ export default function AdminProjects() {
             </div>
             <div style={{ marginBottom:14 }}>
               <label style={{ display:'block', fontSize:11, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:4 }}>Assignment Email CC</label>
-              <p style={{ fontSize:11, color:'#94a3b8', margin:'0 0 8px' }}>Selected project stakeholders are copied when a task or issue is assigned. zcrossingtasktracker@gmail.com is always copied.</p>
+              <p style={{ fontSize:11, color:'#94a3b8', margin:'0 0 8px' }}>Selected project stakeholders and the configured email sender are copied when a task or issue is assigned.</p>
               <div style={{ border:'1px solid #e2e8f0', borderRadius:8, padding:10, maxHeight:160, overflow:'auto' }}>
                 {users.map(u => (
                   <label key={u._id} style={{ display:'flex', alignItems:'center', gap:10, padding:'6px 4px', cursor:'pointer' }}>

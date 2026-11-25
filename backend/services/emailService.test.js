@@ -7,23 +7,24 @@ const {
   buildTaskBlockedContent,
   buildProjectClosureContent,
   buildTaskBlockedRecipients,
-  getDeliveryFailure,
-  SENDER_EMAIL
+  getDeliveryFailure
 } = require('./emailService');
 
 test('assignment email sends to the assignee and deduplicates stakeholders in CC', () => {
+  const sender = 'tasktracker-sender@example.com';
   const recipients = buildRecipients(
     { _id: 'assignee', name: 'Assignee', email: 'person@example.com' },
     [
       { _id: 'stakeholder', name: 'Stakeholder', email: 'stakeholder@example.com' },
       { _id: 'duplicate', name: 'Duplicate', email: 'PERSON@example.com' },
-      { _id: 'admin', name: 'Admin', email: SENDER_EMAIL }
-    ]
+      { _id: 'admin', name: 'Admin', email: sender }
+    ],
+    sender
   );
 
   assert.equal(recipients.to.email, 'person@example.com');
   assert.deepEqual(recipients.cc.map(recipient => recipient.email), [
-    SENDER_EMAIL,
+    sender,
     'stakeholder@example.com'
   ]);
 });
@@ -143,29 +144,28 @@ test('blocked-task notification requires a valid blocker email', () => {
   );
 });
 
-test('permanent SMTP envelope rejections fail without retry and retain safe diagnostics', () => {
+test('permanent Graph mail errors fail without retry and retain safe diagnostics', () => {
   const failure = getDeliveryFailure({
-    code:'EENVELOPE',
-    responseCode:550,
-    response:'550 5.7.1 Message rejected for person@example.com'
+    code:'GRAPH_MAIL_ERROR',
+    responseCode:403,
+    message:'Insufficient privileges for person@example.com'
   }, 1);
 
   assert.equal(failure.status, 'failed');
-  assert.match(failure.detail, /EENVELOPE: 550:/);
-  assert.match(failure.detail, /\[email\]/);
+  assert.match(failure.detail, /GRAPH_MAIL_ERROR: 403:/);
   assert.doesNotMatch(failure.detail, /person@example\.com/);
 });
 
-test('temporary SMTP failures are retried up to the configured attempt limit', () => {
+test('temporary delivery failures are retried up to the configured attempt limit', () => {
   assert.equal(getDeliveryFailure({
-    code:'ETEMP',
-    responseCode:450,
-    response:'450 Mailbox temporarily unavailable'
+    code:'GRAPH_MAIL_ERROR',
+    responseCode:429,
+    message:'Graph request throttled'
   }, 1).status, 'pending');
   assert.equal(getDeliveryFailure({
-    code:'ETEMP',
-    responseCode:450,
-    response:'450 Mailbox temporarily unavailable'
+    code:'GRAPH_MAIL_ERROR',
+    responseCode:429,
+    message:'Graph request throttled'
   }, 5).status, 'failed');
 });
 

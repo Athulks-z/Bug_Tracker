@@ -332,7 +332,7 @@ Packages below are proposals, not installed. Confirm versions against the suppor
 | `pg` | PostgreSQL client/pool for the current CommonJS Express application. | Installed and used by `backend/config/db.js`. |
 | `node-pg-migrate` | Versioned SQL/JavaScript database migrations. SQL migrations should be reviewable and run by a separate migration command. | Not selected; the repository uses the versioned SQL runner in `backend/db/migrate.js`. |
 | `zod` | Runtime schemas for every route body/query/params, including strict unknown-field rejection. | Recommended; no schema library currently found. |
-| `nodemailer` | SMTP mail delivery if the selected provider uses SMTP; may be replaced by a chosen provider SDK. | Required only when email is implemented; provider remains to be selected. |
+| `@azure/msal-node` | Microsoft Entra client-credentials tokens for Microsoft Graph email delivery. | Selected for outgoing email; configure `Mail.Send` application permission with admin consent. |
 | `pino`, `pino-http` | Structured JSON application/request logging with request IDs and redaction. | Recommended for SRS observability. |
 | `node-cron` | In-process scheduled milestone/outbox jobs if deployment guarantees one elected worker; otherwise use a separate worker/managed scheduler. | Conditional; deployment topology decision required. |
 | `@aws-sdk/client-s3` | S3-compatible attachment storage if that is the selected object-storage provider. | Conditional; object-storage provider not specified. |
@@ -349,7 +349,7 @@ Packages below are proposals, not installed. Confirm versions against the suppor
 | `ALLOW_SELF_REGISTRATION`, `DEFAULT_SELF_REGISTER_ROLE` | SRS registration flags; default role `employee` if enabled. |
 | `CLIENT_URL`, `PORT`, `NODE_ENV`, `MAX_UPLOAD_MB` | Retained v1 settings; validate and document. |
 | `STORAGE_DRIVER`, `STORAGE_BUCKET` | SRS attachment backend configuration. Provider credentials should use provider-native secret injection rather than committed values. |
-| `SMTP_URL`, `MAIL_FROM`, `APP_BASE_URL` | SRS email settings; required/validated only when mail is enabled. Secrets must be redacted. |
+| `MS_TENANT_ID`, `MS_CLIENT_ID`, `MS_CLIENT_SECRET`, `MS_SENDER` | Microsoft Graph client credentials and sender mailbox; required at backend startup. Keep the client secret in the hosting secret manager and never log it. |
 | `DEFAULT_TIMEZONE` | Organization timezone for date buckets, due rules and scheduled events; default `UTC` per SRS. |
 | `NOTIFY_JOB_CRON`, `EMAIL_BATCH_WINDOW_SECONDS`, `EMAIL_MAX_ATTEMPTS` | SRS schedule, batch window (300 seconds default), and retry limit (5 default). |
 | `MILESTONE_WARNING_DAYS`, `OVERDUE_REMINDER_DAYS` | SRS due warning thresholds (`3,1`) and overdue repeat interval (`7`). |

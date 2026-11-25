@@ -8,7 +8,7 @@ A bug tracker built with React, Node.js, Express, and PostgreSQL storage.
 - Five-role access control: super admin, admin, manager, employee, and trainee
 - Issue management, comments, attachments, activity, search, filters, and CSV export
 - Projects and team membership
-- Assignment emails for tasks and issues, with project stakeholders and the fixed admin address copied
+- Assignment emails for tasks and issues, with project stakeholders and the configured sender copied
 - Admin user management
 - Dashboard, reports, tasks, sprints, releases, notifications, and issue templates
 
@@ -38,11 +38,18 @@ Prerequisites: Node.js 18+ and a PostgreSQL database.
 3. In `frontend`, set `REACT_APP_API_URL=http://localhost:5000/api`, run `npm install`, and run `npm start`.
 4. Open `http://localhost:3000/register`. On an empty database, the first account becomes super admin; an imported database keeps its existing accounts.
 
-## Assignment email setup
+## Email setup
 
-Assignment emails are sent from `zcrossingtasktracker@gmail.com` through Gmail SMTP. Set `EMAIL_SMTP_PASSWORD` in `backend/.env` to an App Password generated for that Google account (Google 2-Step Verification must be enabled); never use or commit the account's normal password. Keep the sender address fixed in the backend and do not set it from user input. Until the SMTP App Password is configured, assignment emails remain queued and the server logs a warning. Apply database migration `005_assignment_responses.sql` before using assignment actions.
+Outgoing email is sent through Microsoft Graph using OAuth 2.0 client credentials. Register an application in Microsoft Entra ID, grant it the Microsoft Graph **Mail.Send** application permission, and grant tenant admin consent. Configure the following values in `backend/.env` or the hosting secret manager:
 
-Add project stakeholders in **Admin → Projects → Edit Project → Assignment Email CC**. When a task or issue is assigned or reassigned, the assignee receives the email; the selected project stakeholders and `zcrossingtasktracker@gmail.com` are copied. The assignee can accept from the email to move the item to **In progress**, or reject with required closing remarks. Rejection sets the item status to **Rejected** and queues a notice with those remarks to the assignee and project stakeholders. Action links are single-use, expire after 14 days, and stop working if the work item is reassigned. The email outbox retries temporary SMTP failures and records delivery state in PostgreSQL.
+- `MS_TENANT_ID`: Microsoft Entra tenant ID.
+- `MS_CLIENT_ID`: application (client) ID.
+- `MS_CLIENT_SECRET`: application secret; keep it private and rotate it according to your security policy.
+- `MS_SENDER`: mailbox user principal name or email address used by Graph's `/users/{sender}/sendMail` endpoint.
+
+The backend validates that these settings are present at startup. The Graph mail service caches OAuth tokens, limits delivery to about 24 messages per minute per running process, retries throttled/transient Graph responses, and records outbox delivery state in PostgreSQL.
+
+Add project stakeholders in **Admin → Projects → Edit Project → Assignment Email CC**. When a task or issue is assigned or reassigned, the assignee receives the email; the selected project stakeholders and configured sender are copied. The assignee can accept from the email to move the item to **In progress**, or reject with required closing remarks. Rejection sets the item status to **Rejected** and queues a notice with those remarks to the assignee and project stakeholders. Action links are single-use, expire after 14 days, and stop working if the work item is reassigned.
 
 ## Roles and project permissions
 
@@ -58,7 +65,7 @@ Department-based scopes are not currently populated. Manager, employee, and trai
 
 ## Render deployment
 
-The repository includes `render.yaml`. Configure `DATABASE_URL`, `CLIENT_URL`, `REACT_APP_API_URL`, and the Gmail `EMAIL_SMTP_PASSWORD` secret in Render. The backend runs versioned migrations before startup; use a PostgreSQL connection string available to the backend service and keep secrets in the platform's secret settings.
+The repository includes `render.yaml`. Configure `DATABASE_URL`, `CLIENT_URL`, `REACT_APP_API_URL`, and the four Microsoft Graph email variables in Render. The backend runs versioned migrations before startup; use a PostgreSQL connection string available to the backend service and keep secrets in the platform's secret settings.
 
 ## Project structure
 

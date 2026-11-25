@@ -158,11 +158,11 @@ No packages have been installed. Confirm versions/maintenance policy before addi
 | `node-pg-migrate` | Versioned database migrations. | Not selected; reviewable SQL migrations use `backend/db/migrate.js`. |
 | `zod` | Strict validation for request parameters, bodies and query filters. | Confirm as schema-validation library or select an equivalent. |
 | `pino`, `pino-http` | Structured JSON request/application logs with redaction. | Align with deployment log collection. |
-| `nodemailer` | SMTP mail if SMTP is selected. | Email provider remains an SRS configuration decision; do not make a provider assumption. |
+| `@azure/msal-node` | Microsoft Entra client-credentials tokens for Microsoft Graph email. | Selected outgoing email provider; grant Graph `Mail.Send` application permission with admin consent. |
 | `node-cron` | Scheduled jobs only if one worker instance can be guaranteed. | Decide worker topology; avoid duplicate schedules in multi-instance API deployment. |
 | Provider-specific object-storage SDK | Attachment byte storage if required by chosen provider. | Provider is unspecified; choose before adding SDK. |
 
-Configuration to plan: `DATABASE_URL` (required), pool/TLS settings, separate migration credentials, existing JWT/port/CORS/auth settings, `DEFAULT_TIMEZONE`, `STORAGE_DRIVER`/`STORAGE_BUCKET`, and optional SMTP/outbox/scheduler variables specified in the SRS. Secrets must be injected through the hosting secret manager, excluded from examples except placeholders, and redacted from logs.
+Configuration to plan: `DATABASE_URL` (required), pool/TLS settings, separate migration credentials, existing JWT/port/CORS/auth settings, `DEFAULT_TIMEZONE`, `STORAGE_DRIVER`/`STORAGE_BUCKET`, Microsoft Graph (`MS_TENANT_ID`, `MS_CLIENT_ID`, `MS_CLIENT_SECRET`, `MS_SENDER`) and outbox/scheduler variables specified in the SRS. Secrets must be injected through the hosting secret manager, excluded from examples except placeholders, and redacted from logs.
 
 ## 6. Security controls and dependencies
 

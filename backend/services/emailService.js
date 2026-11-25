@@ -1,22 +1,19 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const sanitizeHtml = require('sanitize-html');
-const nodemailer = require('nodemailer');
 const path = require('path');
 const pool = require('../config/db');
+const mailer = require('./mailer');
 const { notifyRecipients } = require('./notificationService');
 
-const SENDER_EMAIL = 'zcrossingtasktracker@gmail.com';
-const SENDER_NAME = 'TaskTracker';
+const SENDER_EMAIL = process.env.MS_SENDER || '';
 const MAX_ATTEMPTS = 5;
 const RETRY_INTERVAL_MS = 15000;
 const CLAIM_LEASE_MINUTES = 5;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-let transporter;
 let workerTimer;
 let workerRunning = false;
-let warnedMissingCredentials = false;
 
 function escapeHtml(value) {
   return String(value == null ? '' : value)
@@ -37,7 +34,8 @@ function getDeliveryFailure(error, attempts) {
     .replace(/[\r\n\x00-\x1f\x7f]+/g, ' ')
     .replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, '[email]')
     .slice(0, 500);
-  const permanent = responseCode >= 500;
+  const permanent = (responseCode >= 400 && responseCode < 500 && responseCode !== 429)
+    || responseCode >= 500;
   return {
     status: permanent || attempts >= MAX_ATTEMPTS ? 'failed' : 'pending',
     responseCode,
@@ -220,20 +218,6 @@ function buildAssignmentContent({ kind, item, project, assignedBy, clientUrl, ac
     <p><a href="${escapeHtml(rejectUrl)}" style="display:inline-block;padding:10px 18px;background:#e24b4a;color:#fff;text-decoration:none;border-radius:6px">Reject assignment</a></p>
     <p><a href="${escapeHtml(resourceUrl)}">Open TaskTracker</a></p>`;
   return { subject, text, html };
-}
-
-function getTransporter() {
-  const password = process.env.EMAIL_SMTP_PASSWORD;
-  if (!password) return null;
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 465,
-      secure: true,
-      auth: { user: SENDER_EMAIL, pass: password }
-    });
-  }
-  return transporter;
 }
 
 async function queueAssignmentEmail({ kind, item, project, assigneeId, assignedBy }) {
@@ -488,7 +472,7 @@ async function claimEmail() {
       [email.id]
     );
     const attachmentRows = await client.query(
-      `SELECT a.filename,a.storage_key
+      `SELECT a.filename,a.mime,a.storage_key
        FROM public.email_attachments ea
        JOIN public.attachments a ON a.id=ea.attachment_id
        WHERE ea.email_outbox_id=$1 AND ea.delivery_mode='attached'
@@ -501,6 +485,7 @@ async function claimEmail() {
     email.cc = recipients.rows.filter(recipient => recipient.recipient_type === 'cc').map(recipient => recipient.email_snapshot);
     email.attachments = attachmentRows.rows.map((attachment) => ({
       filename: attachment.filename,
+      contentType: attachment.mime || 'application/octet-stream',
       path: attachment.storage_key.startsWith('/uploads/')
         ? path.join(__dirname, '..', '..', 'uploads', attachment.storage_key.replace(/^\/uploads\//, ''))
         : attachment.storage_key
@@ -514,12 +499,11 @@ async function claimEmail() {
   }
 }
 
-async function deliverNextEmail(mailTransport) {
+async function deliverNextEmail() {
   const email = await claimEmail();
   if (!email) return false;
   try {
-    await mailTransport.sendMail({
-      from: { name: SENDER_NAME, address: SENDER_EMAIL },
+    await mailer.sendMail({
       to: email.to,
       cc: email.cc,
       subject: email.subject,
@@ -563,17 +547,9 @@ async function deliverNextEmail(mailTransport) {
 
 async function processPendingEmails() {
   if (workerRunning) return;
-  const mailTransport = getTransporter();
-  if (!mailTransport) {
-    if (!warnedMissingCredentials) {
-      console.warn('Assignment emails are queued but not sent: configure EMAIL_SMTP_PASSWORD.');
-      warnedMissingCredentials = true;
-    }
-    return;
-  }
   workerRunning = true;
   try {
-    while (await deliverNextEmail(mailTransport)) {
+    while (await deliverNextEmail()) {
       // Drain currently available messages before waiting for the next poll.
     }
   } finally {
@@ -757,6 +733,7 @@ function startEmailWorker() {
 
 module.exports = {
   SENDER_EMAIL,
+  validateEmailConfig: mailer.validateConfig,
   escapeHtml,
   buildRecipients,
   buildAssignmentContent,

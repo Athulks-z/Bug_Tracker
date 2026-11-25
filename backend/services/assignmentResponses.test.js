@@ -150,7 +150,7 @@ test('rejecting an assignment requires and records closing remarks', async () =>
       .filter(recipient => recipient.recipient_type === 'cc')
       .map(recipient => recipient.email_snapshot);
     assert.ok(ccEmails.includes(fixture.stakeholder.email));
-    assert.ok(ccEmails.includes('zcrossingtasktracker@gmail.com'));
+    if (process.env.MS_SENDER) assert.ok(ccEmails.includes(process.env.MS_SENDER));
   } finally {
     await cleanup(fixture);
   }

@@ -107,6 +107,7 @@ app.use((err, req, res, next) => {
 // Initialize storage before accepting API traffic.
 async function startServer() {
     try {
+        require('./services/emailService').validateEmailConfig();
         await require('./services/data').store.initialize();
         require('./services/emailService').startEmailWorker();
         require('./services/notificationService').startNotificationCleanup();

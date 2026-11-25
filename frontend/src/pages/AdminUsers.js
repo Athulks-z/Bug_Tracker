@@ -194,14 +194,15 @@ export default function AdminUsers() {
       </div>
 
       {showModal && (
-        <div onClick={()=>setShowModal(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
-          <div onClick={e=>e.stopPropagation()} style={{ background:'#fff', borderRadius:14, padding:28, width:'100%', maxWidth:460, boxShadow:'0 20px 60px rgba(0,0,0,0.3)' }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
-              <h2 style={{ fontSize:16, fontWeight:600 }}>{editUser ? 'Edit User' : 'Add New User'}</h2>
+        <div className="modal-backdrop" onClick={(event)=>{ if(event.target===event.currentTarget) setShowModal(false) }}>
+          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="user-form-title" style={{ maxWidth:600 }} onClick={e=>e.stopPropagation()}>
+            <div className="modal-header" style={{ marginBottom:20 }}>
+              <h2 id="user-form-title" style={{ fontSize:16, fontWeight:600 }}>{editUser ? 'Edit User' : 'Add New User'}</h2>
               <button onClick={()=>setShowModal(false)} style={{ background:'none', border:'none', fontSize:20, color:'#94a3b8' }}><i className="ti ti-x" /></button>
             </div>
+            <div className="modal-body">
             {error && <div style={{ background:'#fef2f2', border:'1px solid #fecaca', color:'#dc2626', padding:'10px 14px', borderRadius:8, marginBottom:14, fontSize:13 }}>{error}</div>}
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+            <div className="modal-form-grid">
               <div style={{ gridColumn:'1/-1' }}>
                 <label style={{ display:'block', fontSize:11, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 }}>Full Name *</label>
                 <input style={inputStyle} value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="John Doe" />
@@ -279,7 +280,8 @@ export default function AdminUsers() {
                 </div>
               )}
             </div>
-            <div style={{ display:'flex', justifyContent:'flex-end', gap:10, marginTop:20 }}>
+            </div>
+            <div className="modal-footer" style={{ justifyContent:'flex-end', gap:10, marginTop:20 }}>
               <button onClick={()=>setShowModal(false)} style={{ padding:'9px 18px', border:'1px solid #e2e8f0', borderRadius:8, background:'none', fontSize:13, color:'#64748b' }}>Cancel</button>
               <button onClick={save} disabled={saving} style={{ padding:'9px 18px', background:'#378add', border:'none', borderRadius:8, color:'#fff', fontSize:13, fontWeight:500, opacity:saving?0.7:1 }}>
                 {saving ? 'Saving...' : editUser ? 'Update User' : 'Add User'}

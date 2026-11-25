@@ -209,18 +209,19 @@ export default function AdminProjects() {
       </div>}
 
       {showModal && (
-        <div onClick={()=>setShowModal(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
-          <div onClick={e=>e.stopPropagation()} style={{ background:'#fff', borderRadius:14, padding:28, width:'100%', maxWidth:500, maxHeight:'90vh', overflow:'auto', boxShadow:'0 20px 60px rgba(0,0,0,0.3)' }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
-              <h2 style={{ fontSize:16, fontWeight:600 }}>{membershipOnly ? 'Manage Project Members' : editProject ? 'Edit Project' : 'New Project'}</h2>
+        <div className="modal-backdrop" onClick={(event)=>{ if(event.target===event.currentTarget) setShowModal(false) }}>
+          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="project-form-title" style={{ maxWidth:760 }} onClick={e=>e.stopPropagation()}>
+            <div className="modal-header" style={{ marginBottom:20 }}>
+              <h2 id="project-form-title" style={{ fontSize:16, fontWeight:600 }}>{membershipOnly ? 'Manage Project Members' : editProject ? 'Edit Project' : 'New Project'}</h2>
               <button onClick={()=>setShowModal(false)} style={{ background:'none', border:'none', fontSize:20, color:'#94a3b8' }}><i className="ti ti-x" /></button>
             </div>
+            <div className="modal-body">
             {error && <div style={{ background:'#fef2f2', border:'1px solid #fecaca', color:'#dc2626', padding:'10px 14px', borderRadius:8, marginBottom:14, fontSize:13 }}>{error}</div>}
             {!membershipOnly && <div style={{ marginBottom:14 }}>
               <label style={{ display:'block', fontSize:11, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 }}>Project Name *</label>
               <input style={inputStyle} value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="e.g. Donnelly Apartments" />
             </div>}
-            {!membershipOnly && <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14 }}>
+            {!membershipOnly && <div className="modal-form-grid" style={{ marginBottom:14 }}>
               <label style={{ fontSize:12,color:'#475569' }}>Project Status *
                 <select style={{ ...inputStyle,display:'block',marginTop:5 }} required value={form.status}
                   onChange={(event) => setForm((current) => ({ ...current,status:event.target.value }))}>
@@ -243,7 +244,7 @@ export default function AdminProjects() {
                 <option value="">Select owner</option>{users.map((person) => <option key={person._id} value={person._id}>{person.name}</option>)}
               </select>
             </div>}
-            {!membershipOnly && <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14 }}>
+            {!membershipOnly && <div className="modal-form-grid" style={{ marginBottom:14 }}>
               <label style={{ fontSize:12,color:'#475569' }}>Start date
                 <input style={{ ...inputStyle,display:'block',marginTop:5 }} type="date" value={form.startDate}
                   onChange={(event) => setForm((current) => ({ ...current,startDate:event.target.value }))} />
@@ -259,7 +260,7 @@ export default function AdminProjects() {
                 onChange={(event) => setMilestoneCount(event.target.value)} />
               <div style={{ display:'grid',gap:8,marginTop:8 }}>
                 {form.milestones.map((milestone,index) => (
-                  <div key={milestone.id || index} style={{ display:'grid',gridTemplateColumns:'1fr 1fr auto',gap:6 }}>
+                  <div key={milestone.id || index} className="modal-milestone-row">
                     <input style={inputStyle} required maxLength={100} aria-label={`Milestone ${index+1} name`}
                       placeholder={`Milestone ${index+1} name`} value={milestone.name}
                       onChange={(event) => setForm((current) => ({
@@ -323,7 +324,8 @@ export default function AdminProjects() {
                 ))}
               </div>
             </div>
-            <div style={{ display:'flex', justifyContent:'flex-end', gap:10, marginTop:20 }}>
+            </div>
+            <div className="modal-footer" style={{ justifyContent:'flex-end', gap:10, marginTop:20 }}>
               <button onClick={()=>setShowModal(false)} style={{ padding:'9px 18px', border:'1px solid #e2e8f0', borderRadius:8, background:'none', fontSize:13, color:'#64748b' }}>Cancel</button>
               <button onClick={save} disabled={saving} style={{ padding:'9px 18px', background:'#378add', border:'none', borderRadius:8, color:'#fff', fontSize:13, fontWeight:500, opacity:saving?0.7:1 }}>
                 {saving ? 'Saving...' : editProject ? 'Update' : 'Create Project'}

@@ -6,7 +6,7 @@ import toast from 'react-hot-toast'
 import { fmtDate } from '../utils'
 import RichTextEditor from '../components/RichTextEditor'
 
-const STATUSES = ['Open','To do','In Progress','In progress','Blocked','Completed','Closed','Rejected','Code Review','QA Testing','Reopened']
+const STATUSES = ['Open','To do','In Progress','Blocked','Completed','Closed','Rejected','Code Review','QA Testing','Reopened']
 const PRIORITIES = ['Critical','High','Medium','Low']
 const STATUS_GROUPS = ['Open','In Progress','Completed/Closed','Rejected']
 const SEVERITIES = ['Showstopper','Critical','Major','Medium','Low','None']
@@ -157,11 +157,12 @@ export default function Tasks() {
   const openEdit = (task) => {
     setEditTask(task)
     setPendingFiles([])
+    const status = task.status === 'In progress' ? 'In Progress' : task.status || 'To do'
     setForm({
       title:task.title || '', description:task.description || '', type:task.type || '',
       customTypeName:task.customTypeName || '', project:task.project?._id || task.project || '',
       milestone:task.milestone || '',
-      assignee:task.assignee?._id || task.assignee || '', status:task.status || 'To do',
+      assignee:task.assignee?._id || task.assignee || '', status,
       priority:task.priority || 'Medium', startDate:task.startDate ? task.startDate.slice(0,10) : today(),
       endDate:task.endDate ? task.endDate.slice(0,10) : '', severity:task.severity || '',
       foundInVersion:task.foundInVersion || '', fixedInVersion:task.fixedInVersion || '',
@@ -341,7 +342,7 @@ export default function Tasks() {
           <div className="modal" style={{ maxWidth:760 }}>
             <div className="modal-header"><h3>{editTask ? 'Edit Task' : backlogMode ? 'Create Backlog Item' : 'Assign Task'}</h3><button className="btn-icon" onClick={() => setShowModal(false)}><i className="ti ti-x" /></button></div>
             {backlogMode && <div style={{ margin:'0 20px',padding:10,borderRadius:8,background:'#fffbeb',color:'#92400e',fontSize:13 }}>Backlog item — dates and assignee are optional. No assignment email is sent until it is moved to Tasks.</div>}
-            <div className="modal-body" style={{ maxHeight:'70vh',overflowY:'auto' }}>
+            <div className="modal-body">
               <div className="form-group">
                 <label className="form-label">Title *</label>
                 <input className="form-control" value={form.title} onChange={(event) => setForm((current) => ({ ...current,title:event.target.value }))} />
@@ -370,7 +371,7 @@ export default function Tasks() {
                 </div>
               )}
 
-              <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:12 }}>
+              <div className="modal-form-grid">
                 {(!editTask || showTeamControls) && <div className="form-group"><label className="form-label">Project *</label>
                   <select className="form-control" disabled={backlogMode && Boolean(backlogProjectId)} value={form.project} onChange={(event) => setForm((current) => ({ ...current,project:event.target.value,milestone:'' }))}>
                     <option value="">Select project</option>{projects.map((project) => <option key={project._id} value={project._id}>{project.name}</option>)}

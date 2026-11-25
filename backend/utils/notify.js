@@ -1,12 +1,15 @@
-const { store } = require('../services/data');
+const { notify } = require('../services/notificationService');
 
-async function sendNotification({ type, issue, user, details }) {
-  return store.insert('notifications', {
+async function sendNotification({ type, issue, user, details, actorUserId }) {
+  return notify({
+    userId: user,
+    actorUserId,
     type,
-    issue,
-    user,
-    details,
-    read: false
+    title: String(type || 'Notification').replace(/_/g, ' '),
+    message: details || '',
+    link: issue ? `/tasks/${issue}` : null,
+    entityType: issue ? 'task' : null,
+    entityId: issue || null
   });
 }
 

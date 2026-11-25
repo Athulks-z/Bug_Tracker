@@ -4,6 +4,7 @@ const {
   SENDER_EMAIL,
   buildAssignmentRejectedContent
 } = require('./emailService');
+const { notifyRecipients } = require('./notificationService');
 
 class AssignmentResponseError extends Error {
   constructor(message, status) {
@@ -190,6 +191,19 @@ async function respondToAssignment({ token, action, closingRemarks }) {
           [emailId, assignment.project_id, assignment.work_item_id]
         );
       }
+      await notifyRecipients({
+        client,
+        recipients,
+        actorUserId: assignment.assigned_user_id,
+        type: 'task_assignment_rejected',
+        title: 'Task assignment rejected',
+        message: `${assignment.title || 'A task'} was rejected: ${closingRemarks.trim()}`,
+        link: `/tasks/${assignment.work_item_id}`,
+        entityType: 'task',
+        entityId: assignment.work_item_id,
+        projectId: assignment.project_id,
+        idempotencyKey: `assignment-rejected:${assignment.id}`
+      });
     }
     await client.query('COMMIT');
     transactionOpen = false;

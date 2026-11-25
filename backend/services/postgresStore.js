@@ -358,7 +358,8 @@ async function loadRecords(client, collection) {
   }
 
   const { rows } = await client.query(
-    `SELECT n.*, nr.project_scope_id, nr.target_project_id, nr.work_item_id
+    `SELECT n.*, nr.project_scope_id, nr.target_project_id, nr.work_item_id,
+            nr.milestone_id
      FROM public.notifications n
      LEFT JOIN public.notification_resources nr ON nr.notification_id = n.id
      ORDER BY n.created_at, n.id`
@@ -369,6 +370,11 @@ async function loadRecords(client, collection) {
     type: row.type,
     issue: row.work_item_id || '',
     details: row.details || '',
+    title: row.title || '',
+    message: row.message || row.details || '',
+    link: row.link || '',
+    entityType: row.entity_type || '',
+    entityId: row.entity_id || row.work_item_id || row.target_project_id || row.milestone_id || '',
     read: Boolean(row.read_at),
     createdAt: row.created_at.toISOString()
   }));
@@ -580,11 +586,16 @@ async function saveRecord(client, collection, record) {
       throw storeError('Referenced issue does not exist', 'INVALID_ISSUE_REFERENCE');
     }
     await client.query(
-      `INSERT INTO public.notifications (id,recipient_user_id,type,details,read_at,created_at)
-       VALUES ($1,$2,$3,$4,$5,$6)
+      `INSERT INTO public.notifications
+       (id,recipient_user_id,type,details,title,message,link,entity_type,entity_id,read_at,created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        ON CONFLICT (id) DO UPDATE SET recipient_user_id=EXCLUDED.recipient_user_id,
-        type=EXCLUDED.type,details=EXCLUDED.details,read_at=EXCLUDED.read_at`,
+        type=EXCLUDED.type,details=EXCLUDED.details,title=EXCLUDED.title,message=EXCLUDED.message,
+        link=EXCLUDED.link,entity_type=EXCLUDED.entity_type,entity_id=EXCLUDED.entity_id,
+        read_at=EXCLUDED.read_at`,
       [id, record.user || '', record.type || 'general', record.details || '',
+        record.title || 'Notification', record.message || record.details || '', record.link || null,
+        record.entityType || null, record.entityId || issueId || null,
         record.read ? updatedAt : null, createdAt]
     );
     await client.query('DELETE FROM public.notification_resources WHERE notification_id=$1', [id]);

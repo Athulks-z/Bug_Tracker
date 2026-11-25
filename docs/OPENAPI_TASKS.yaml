@@ -269,6 +269,50 @@ paths:
   /api/work-types:
     get:
       summary: List and administer configurable work types
+  /api/notifications:
+    get:
+      summary: List the authenticated user's notifications
+      description: Returns only notifications belonging to the authenticated user, newest first.
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - in: query
+          name: filter
+          schema:
+            type: string
+            enum: [all, unread]
+            default: all
+      responses:
+        '200':
+          description: Notifications and unread count for the authenticated user
+  /api/notifications/unread-count:
+    get:
+      summary: Get the authenticated user's unread notification count
+  /api/notifications/{id}/read:
+    patch:
+      summary: Mark an owned notification as read
+      description: Returns 403 when the notification belongs to another user.
+  /api/notifications/read-all:
+    patch:
+      summary: Mark all of the authenticated user's notifications as read
+  /api/notifications/{id}:
+    delete:
+      summary: Delete an owned notification
+      description: Returns 403 when the notification belongs to another user.
+  /api/notifications/clear-read:
+    delete:
+      summary: Delete all read notifications belonging to the authenticated user
 components:
   schemas:
     TaskInput:

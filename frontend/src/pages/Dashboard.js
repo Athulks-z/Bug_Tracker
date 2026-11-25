@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
+import NotificationBell from '../components/NotificationBell';
 
 const COLORS = ['#378add','#1d9e75','#ef9f27','#e24b4a','#534ab7','#0891b2','#64748b'];
 const isTeamRole = (role) => ['super_admin','admin','manager'].includes(role);
@@ -161,9 +162,12 @@ export default function Dashboard() {
 
   return (
     <main style={{ padding:28 }}>
-      <header style={{ marginBottom:22 }}>
-        <h1 style={{ fontSize:22,fontWeight:700,color:'#1a202c',margin:0 }}>Dashboard</h1>
-        <p style={{ color:'#64748b',fontSize:14,marginTop:4 }}>Welcome back, {user?.name}</p>
+      <header style={{ marginBottom:22,display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:16 }}>
+        <div>
+          <h1 style={{ fontSize:22,fontWeight:700,color:'#1a202c',margin:0 }}>Dashboard</h1>
+          <p style={{ color:'#64748b',fontSize:14,marginTop:4 }}>Welcome back, {user?.name}</p>
+        </div>
+        <NotificationBell />
       </header>
 
       {teamView && (

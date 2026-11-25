@@ -21,7 +21,7 @@ const {
   queryTaskDashboard
 } = require('../services/taskQueries');
 const { queueAssignmentEmail, queueTaskBlockedEmail } = require('../services/emailService');
-const notify = require('../utils/notify');
+const { notifyTaskStakeholders } = require('../services/notificationService');
 const {
   sanitizeTaskDescription,
   validateAttachmentFilename,
@@ -453,7 +453,14 @@ router.post('/:id/reject', auth, async (req, res) => {
         createdAt: new Date().toISOString()
       }]
     });
-    await notify.sendNotification({ type: 'task_rejected', issue: task._id, user: req.user._id, details: remarks });
+    await notifyTaskStakeholders({
+      taskId: task._id,
+      actorUserId: req.user._id,
+      type: 'task_rejected',
+      title: 'Task rejected',
+      message: `${task.title || 'A task'} was rejected: ${remarks}`,
+      idempotencyKey: `task-rejected:${task._id}:${saved.rejectedAt}`
+    });
     res.json(await hydrateTask(saved));
   } catch (err) {
     res.status(500).json({ message: 'Unable to reject task' });
@@ -481,7 +488,14 @@ router.post('/:id/reopen', auth, async (req, res) => {
         createdAt: new Date().toISOString()
       }]
     });
-    await notify.sendNotification({ type: 'task_reopened', issue: task._id, user: req.user._id, details: 'Task reopened' });
+    await notifyTaskStakeholders({
+      taskId: task._id,
+      actorUserId: req.user._id,
+      type: 'task_reopened',
+      title: 'Task reopened',
+      message: `${task.title || 'A task'} was reopened.`,
+      idempotencyKey: `task-reopened:${task._id}:${saved.reopenedCount}`
+    });
     res.json(await hydrateTask(saved));
   } catch (err) {
     res.status(500).json({ message: 'Unable to reopen task' });

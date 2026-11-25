@@ -4,6 +4,7 @@ const sanitizeHtml = require('sanitize-html');
 const nodemailer = require('nodemailer');
 const path = require('path');
 const pool = require('../config/db');
+const { notifyRecipients } = require('./notificationService');
 
 const SENDER_EMAIL = 'zcrossingtasktracker@gmail.com';
 const SENDER_NAME = 'TaskTracker';
@@ -354,6 +355,19 @@ async function queueAssignmentEmail({ kind, item, project, assigneeId, assignedB
        VALUES ($1, $2, $3, $4, $5, now() + interval '14 days')`,
       [emailId, String(item._id), String(assigneeId), to.email, tokenHash]
     );
+    await notifyRecipients({
+      client,
+      recipients: [to, ...cc],
+      actorUserId: assignedBy,
+      type: 'task_assigned',
+      title: 'Task assigned',
+      message: `${item.title || 'A task'} was assigned to ${assignee.name || 'a team member'}.`,
+      link: `/tasks/${item._id}`,
+      entityType: 'task',
+      entityId: item._id,
+      projectId: project._id,
+      idempotencyKey: `assignment:${emailId}`
+    });
     await client.query('COMMIT');
     return true;
   } catch (error) {
@@ -418,6 +432,19 @@ async function queueTaskBlockedEmail({ task, project, blockedBy }) {
        VALUES ($1, $2, $3)`,
       [emailId, String(project._id), String(task._id)]
     );
+    await notifyRecipients({
+      client,
+      recipients: [...to, ...cc],
+      actorUserId: blockedBy._id || blockedBy.id,
+      type: 'task_blocked',
+      title: 'Task blocked',
+      message: `${task.title || 'A task'} was marked as blocked.`,
+      link: `/tasks/${task._id}`,
+      entityType: 'task',
+      entityId: task._id,
+      projectId: project._id,
+      idempotencyKey: `task-blocked:${emailId}`
+    });
     await client.query('COMMIT');
     return true;
   } catch (error) {
@@ -607,7 +634,9 @@ function buildProjectClosureContent({ project, closure, clientUrl, secureDownloa
   return { subject, text, html };
 }
 
-async function queueProjectClosureEmail({ project, closure, recipients, attachments, transactionClient }) {
+async function queueProjectClosureEmail({
+  project, closure, recipients, attachments, transactionClient, notificationRecipients
+}) {
   const to = [];
   const cc = [];
   const seenTo = new Set();
@@ -627,11 +656,6 @@ async function queueProjectClosureEmail({ project, closure, recipients, attachme
     seenAll.add(key);
     cc.push({ ...recipient, email });
   }
-  if (!to.length) {
-    console.error('Project closure appreciation email was not queued: no valid To recipient');
-    return false;
-  }
-
   const maxEmailBytes = Number(process.env.MAX_ATTACHMENT_EMAIL_MB || 10) * 1024 * 1024;
   const totalBytes = (attachments || []).reduce((total, attachment) => total + Number(attachment.sizeBytes || 0), 0);
   const secureDownloadLink = totalBytes > maxEmailBytes;
@@ -640,10 +664,30 @@ async function queueProjectClosureEmail({ project, closure, recipients, attachme
     clientUrl:(process.env.CLIENT_URL || 'http://localhost:3000').split(',')[0].trim(),
     secureDownloadLink
   });
+  const projectMessage = `${project.name || project.key || 'A project'} was closed.${
+    closure.closingRemarksText ? ` ${closure.closingRemarksText}` : ''
+  }`;
   const ownsClient = !transactionClient;
   const client = transactionClient || await pool.connect();
   try {
     if (ownsClient) await client.query('BEGIN');
+    await notifyRecipients({
+      client,
+      recipients: notificationRecipients || [...to, ...cc],
+      actorUserId: closure.closedBy,
+      type: 'project_closed',
+      title: 'Project closed',
+      message: projectMessage,
+      link: `/projects/${project.id || project._id}`,
+      entityType: 'project',
+      entityId: project.id || project._id,
+      idempotencyKey: `project-closure:${closure.id}:closed`
+    });
+    if (!to.length) {
+      console.error('Project closure appreciation email was not queued: no valid To recipient');
+      if (ownsClient) await client.query('COMMIT');
+      return false;
+    }
     const { rows } = await client.query(
       `INSERT INTO public.email_outbox (event_type,subject,payload,status,idempotency_key)
        VALUES ('project_closed',$1,$2::jsonb,'pending',$3)

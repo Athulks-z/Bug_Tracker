@@ -44,6 +44,7 @@ export default {
   getWithMeta: (p, params) => req('GET', p, undefined, params, 'meta'),
   post: (p, b) => req('POST', p, b),
   put: (p, b) => req('PUT', p, b),
+  patch: (p, b) => req('PATCH', p, b),
   delete: (p) => req('DELETE', p),
   download: (p, params) => req('GET', p, undefined, params, 'blob')
 };

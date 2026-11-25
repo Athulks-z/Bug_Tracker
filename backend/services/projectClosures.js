@@ -2,6 +2,7 @@ const pool = require('../config/db');
 const fs = require('fs');
 const path = require('path');
 const { queueProjectClosureEmail } = require('./emailService');
+const { notifyRecipients } = require('./notificationService');
 
 function closureError(message, status = 400, code) {
   return Object.assign(new Error(message), { status, code });
@@ -82,28 +83,19 @@ async function activeProjectUsers(client, projectId, ownerId, closerId) {
   return rows;
 }
 
-async function addProjectNotifications(client, { projectId, projectName, projectKey, closure, actorId, action, recipients, details }) {
-  for (const recipient of recipients) {
-    const idempotencyKey = `project-closure:${closure.id}:${action}:${recipient.id}`;
-    const { rows } = await client.query(
-      `INSERT INTO public.notifications
-       (recipient_user_id,actor_user_id,type,details,resource_snapshot,idempotency_key)
-       VALUES ($1,$2,$3,$4,$5::jsonb,$6)
-       ON CONFLICT (idempotency_key) DO NOTHING
-       RETURNING id`,
-      [recipient.id,String(actorId),`project_${action}`,details,JSON.stringify({
-        projectId:String(projectId),projectName,projectKey,closureId:closure.id,action
-      }),idempotencyKey]
-    );
-    if (rows.length) {
-      await client.query(
-        `INSERT INTO public.notification_resources
-         (notification_id,project_scope_id,target_project_id)
-         VALUES ($1,$2,$2)`,
-        [rows[0].id,String(projectId)]
-      );
-    }
-  }
+async function addProjectNotifications(client, { projectId, closure, actorId, action, recipients, details }) {
+  await notifyRecipients({
+    client,
+    recipients,
+    actorUserId: actorId,
+    type: `project_${action}`,
+    title: action === 'reopened' ? 'Project reopened' : 'Project closed',
+    message: details,
+    link: `/projects/${projectId}`,
+    entityType: 'project',
+    entityId: projectId,
+    idempotencyKey: `project-closure:${closure.id}:${action}`
+  });
 }
 
 function makeEmailRecipients(users, ownerId, closerId) {
@@ -257,11 +249,6 @@ async function closeProject({ projectId, user, closingRemarksHtml, closingRemark
     );
 
     const users = await activeProjectUsers(client,projectId,project.owner_user_id,user._id);
-    await addProjectNotifications(client,{
-      projectId,projectName:project.name,projectKey:project.key,closure,actorId:user._id,
-      action:'closed',recipients:users,
-      details:`${project.name} was closed. ${closingRemarksText}`
-    });
     const emailRecipients = makeEmailRecipients(users,project.owner_user_id,user._id);
     closure.closedByName = users.find((entry) => String(entry.id) === String(user._id))?.name || '';
     closure.closingRemarksText = closingRemarksText;
@@ -270,7 +257,8 @@ async function closeProject({ projectId, user, closingRemarksHtml, closingRemark
       project:{ id:project.id,name:project.name,key:project.key },
       closure,
       recipients:emailRecipients,
-      attachments:attachmentRows
+      attachments:attachmentRows,
+      notificationRecipients:users
     });
     if (!queued) console.error(`Appreciation email for project closure ${closure.id} could not be queued`);
     await client.query('COMMIT');
@@ -356,7 +344,7 @@ async function reopenProject({ projectId,user,reopeningRemarks }) {
       [String(projectId),closure.id]
     );
     await addProjectNotifications(client,{
-      projectId,projectName:project.name,projectKey:project.key,
+      projectId,
       closure:{ id:closure.id },actorId:user._id,action:'reopened',
       recipients,details:`${project.name} was reopened. ${reopeningRemarks}`
     });

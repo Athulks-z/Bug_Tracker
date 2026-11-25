@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 
 const COLORS = ['#378add','#1d9e75','#ef9f27','#e24b4a','#534ab7','#0891b2','#64748b'];
 const isTeamRole = (role) => ['super_admin','admin','manager'].includes(role);
+const recordId = (value) => typeof value === 'object' && value !== null ? value._id : value;
 function StatCard({ label, value, icon, color, onClick }) {
   return (
     <button type="button" onClick={onClick} style={{
@@ -68,6 +69,14 @@ export default function Dashboard() {
     const projectIds = new Set(filterRelationships
       .filter((relationship) => relationship.employeeId === employeeId)
       .map((relationship) => relationship.projectId));
+    projects.forEach((project) => {
+      const relatedUserIds = [
+        project.owner,
+        ...(project.members || []),
+        ...(project.stakeholders || [])
+      ].map(recordId);
+      if (relatedUserIds.includes(employeeId)) projectIds.add(project._id);
+    });
     return projects.filter((project) => projectIds.has(project._id));
   }, [filters.assignee, filterRelationships, projects, user?._id]);
 
@@ -76,12 +85,31 @@ export default function Dashboard() {
     const employeeIds = new Set(filterRelationships
       .filter((relationship) => relationship.projectId === filters.project)
       .map((relationship) => relationship.employeeId));
+    const project = projects.find((item) => item._id === filters.project);
+    if (project) {
+      [
+        project.owner,
+        ...(project.members || []),
+        ...(project.stakeholders || [])
+      ].map(recordId).forEach((employeeId) => employeeIds.add(employeeId));
+    }
     return users.filter((item) => employeeIds.has(item._id));
-  }, [filters.project, filterRelationships, users]);
+  }, [filters.project, filterRelationships, projects, users]);
 
-  const canSelectMyTasks = !filters.project
-    || filterRelationships.some((relationship) =>
-      relationship.projectId === filters.project && relationship.employeeId === user?._id);
+  const projectIncludesEmployee = (projectId, employeeId) => {
+    if (!projectId || !employeeId) return false;
+    if (filterRelationships.some((relationship) =>
+      relationship.projectId === projectId && relationship.employeeId === employeeId)) return true;
+    const project = projects.find((item) => item._id === projectId);
+    if (!project) return false;
+    return [
+      project.owner,
+      ...(project.members || []),
+      ...(project.stakeholders || [])
+    ].map(recordId).includes(employeeId);
+  };
+
+  const canSelectMyTasks = !filters.project || projectIncludesEmployee(filters.project, user?._id);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -147,8 +175,7 @@ export default function Dashboard() {
               setFilters((current) => {
                 if (!project || !current.assignee) return { ...current,project };
                 const employeeId = employeeIdForFilter(current.assignee);
-                const isRelated = filterRelationships.some((relationship) =>
-                  relationship.projectId === project && relationship.employeeId === employeeId);
+                const isRelated = projectIncludesEmployee(project, employeeId);
                 return { ...current,project,assignee:isRelated ? current.assignee : '' };
               });
             }}>
@@ -164,8 +191,7 @@ export default function Dashboard() {
               setFilters((current) => {
                 if (!current.project || !assignee) return { ...current,assignee };
                 const employeeId = employeeIdForFilter(assignee);
-                const isRelated = filterRelationships.some((relationship) =>
-                  relationship.projectId === current.project && relationship.employeeId === employeeId);
+                const isRelated = projectIncludesEmployee(current.project, employeeId);
                 return { ...current,assignee,project:isRelated ? current.project : '' };
               });
             }}>

@@ -255,6 +255,14 @@ test('normalized PostgreSQL store preserves unified Task CRUD and concurrent ins
       relation.projectId === projectId && relation.employeeId === user._id), true);
     assert.equal(managerDashboard.filterRelationships.some((relation) =>
       relation.projectId === projectId && relation.employeeId === trainee._id), true);
+    assert.equal((await store.findById('projects', projectId)).members.includes(trainee._id), false);
+    const assignedNonMemberDashboard = await queryTaskDashboard(manager, {
+      project:projectId,
+      assignee:trainee._id
+    });
+    assert.equal(assignedNonMemberDashboard.summary.total, 1);
+    assert.equal(assignedNonMemberDashboard.byProject.some((project) => project.id === projectId), true);
+    assert.equal(assignedNonMemberDashboard.recentTasks.every((task) => task.assignee._id === trainee._id), true);
     assert.equal(managerDashboard.filterRelationships.some((relation) =>
       relation.projectId === projectId && relation.employeeId === manager._id), true);
     const employeeProjectDashboard = await queryTaskDashboard(manager, {

@@ -6,7 +6,7 @@ A bug tracker built with React, Node.js, Express, and PostgreSQL storage.
 
 - JWT login and registration; the first account in an empty database becomes super admin
 - Five-role access control: super admin, admin, manager, employee, and trainee
-- Issue management, comments, attachments, activity, search, filters, and CSV export
+- Issue management, comments, attachments, activity, search, filters, and CSV/XLSX task export
 - Projects and team membership
 - Assignment emails for tasks and issues, with project stakeholders and the configured sender copied
 - Admin user management
@@ -28,6 +28,8 @@ npm --prefix backend run dev
 The API reads and writes normalized PostgreSQL tables while preserving the existing API record shapes. `db:migrate:normalized` validates and converts the transitional `app_records` data in one transaction, verifies row counts, then renames that source table to `app_records_legacy`, which is preserved but not used by runtime storage. It will refuse cutover if references are invalid or normalized target tables already contain data. Legacy issue records without a type are explicitly mapped to `other`; memberships from both legacy arrays are combined. For the current development data, each side had two memberships with no overlap; the approved union is four. The database contains four users, one project, and two issues. The original Google Sheet was not modified.
 
 `db:migrate:sheets` is a legacy first-stage importer for databases that still have an empty `app_records` compatibility table. Do not run it after normalized cutover; the original imported records are preserved in `app_records_legacy`.
+
+Task exports are generated server-side from the current task-list filters. CSV and Excel exports are limited to 50,000 rows by default; configure `EXPORT_MAX_ROWS` to change the limit and `EXPORT_TIMEZONE` (default `Asia/Kolkata`) to control date formatting and filenames. Exports are limited to 10 per user per minute.
 
 ## Local development
 
@@ -93,6 +95,7 @@ render.yaml       Render deployment configuration
 | GET/POST/PUT/DELETE | `/api/issues` | Issue management |
 | POST | `/api/issues/:id/comments` | Add an issue comment |
 | GET/POST/PUT/DELETE | `/api/tasks` | Task management |
+| GET | `/api/tasks/export` | Export all matching tasks as CSV or XLSX; accepts task-list filters and returns a filename in `Content-Disposition` |
 | GET/POST/PUT/DELETE | `/api/sprints` | Sprint management |
 | GET/POST/PUT/DELETE | `/api/releases` | Release management |
 | GET/POST/PUT/DELETE | `/api/templates` | Issue template management |

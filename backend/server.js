@@ -7,6 +7,7 @@ const { loadConfig } = require('./config');
 const config = loadConfig();
 
 const app = express();
+app.locals.config = config;
 
 const path = require('path');
 
@@ -17,7 +18,7 @@ app.use(cors({
         if (!origin || config.clientOrigins.includes(origin)) return callback(null, true);
         return callback(new Error('Origin not allowed by CORS'));
     },
-    exposedHeaders: ['X-Total-Count'],
+    exposedHeaders: ['X-Total-Count', 'Content-Disposition'],
     credentials: true
 }));
 

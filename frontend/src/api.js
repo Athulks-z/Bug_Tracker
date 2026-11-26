@@ -32,6 +32,12 @@ const req = async (method, path, body, params, responseType = 'json') => {
     throw new Error(data.message || 'Request failed');
   }
   if (responseType === 'blob') return res.blob();
+  if (responseType === 'download-meta') {
+    return {
+      blob: await res.blob(),
+      contentDisposition: res.headers.get('Content-Disposition')
+    };
+  }
   const data = await res.json();
   if (responseType === 'meta') {
     return { data, total:Number(res.headers.get('X-Total-Count') || data.length || 0) };
@@ -46,5 +52,6 @@ export default {
   put: (p, b) => req('PUT', p, b),
   patch: (p, b) => req('PATCH', p, b),
   delete: (p) => req('DELETE', p),
-  download: (p, params) => req('GET', p, undefined, params, 'blob')
+  download: (p, params) => req('GET', p, undefined, params, 'blob'),
+  downloadWithMeta: (p, params) => req('GET', p, undefined, params, 'download-meta')
 };

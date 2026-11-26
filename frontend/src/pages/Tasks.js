@@ -46,6 +46,16 @@ function MultiSelectDropdown({ label, options, value, onChange }) {
   )
 }
 
+function filenameFromDisposition(value) {
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(value || '')
+  if (encoded) return decodeURIComponent(encoded[1])
+  const quoted = /filename="([^"]+)"/i.exec(value || '')
+  if (quoted) return quoted[1]
+  const unquoted = /filename=([^;]+)/i.exec(value || '')
+  if (unquoted) return unquoted[1].trim()
+  throw new Error('The export response did not include a filename')
+}
+
 const today = () => new Date().toISOString().slice(0, 10)
 
 export default function Tasks() {
@@ -60,6 +70,8 @@ export default function Tasks() {
   const [types, setTypes] = useState([])
   const [projectMilestones, setProjectMilestones] = useState([])
   const [loading, setLoading] = useState(true)
+  const [exporting, setExporting] = useState(false)
+  const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [editTask, setEditTask] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -101,6 +113,30 @@ export default function Tasks() {
       setLoading(false)
     }
   }, [filters, page])
+
+  const downloadExport = async (format) => {
+    setExportMenuOpen(false)
+    setExporting(true)
+    try {
+      const { blob, contentDisposition } = await api.downloadWithMeta('/tasks/export', {
+        ...filters,
+        format
+      })
+      const filename = filenameFromDisposition(contentDisposition)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (error) {
+      toast.error(error.message || 'Unable to export tasks')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   useEffect(() => {
     loadTasks()
@@ -266,7 +302,33 @@ export default function Tasks() {
     <div style={{ padding:28 }}>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:22 }}>
         <div><h1 style={{ fontSize:22,fontWeight:700 }}>Tasks</h1><p style={{ color:'#64748b',fontSize:13 }}>{total} tasks</p></div>
-        {user?.role !== 'trainee' && <button className="btn btn-primary" onClick={openNew}><i className="ti ti-plus" /> New Task</button>}
+        <div style={{ display:'flex',alignItems:'center',gap:8 }}>
+          <div style={{ position:'relative' }} onKeyDown={(event) => {
+            if (event.key === 'Escape') setExportMenuOpen(false)
+          }}>
+            <button type="button" className="btn btn-ghost"
+              disabled={loading || exporting || total === 0}
+              aria-haspopup="menu" aria-expanded={exportMenuOpen}
+              onClick={() => setExportMenuOpen((open) => !open)}>
+              <i className={exporting ? 'ti ti-loader-2' : 'ti ti-download'} />
+              {exporting ? 'Generating…' : 'Export'}
+              {!exporting && <i className="ti ti-chevron-down" />}
+            </button>
+            {exportMenuOpen && <div role="menu" style={{
+              position:'absolute',right:0,top:'calc(100% + 4px)',zIndex:30,minWidth:190,
+              padding:5,background:'#fff',border:'1px solid #e2e8f0',borderRadius:8,
+              boxShadow:'0 8px 20px rgba(15,23,42,0.12)'
+            }}>
+              <button type="button" role="menuitem" className="btn btn-ghost"
+                style={{ width:'100%',justifyContent:'flex-start' }}
+                onClick={() => downloadExport('csv')}>Export as CSV</button>
+              <button type="button" role="menuitem" className="btn btn-ghost"
+                style={{ width:'100%',justifyContent:'flex-start' }}
+                onClick={() => downloadExport('xlsx')}>Export as Excel (.xlsx)</button>
+            </div>}
+          </div>
+          {user?.role !== 'trainee' && <button className="btn btn-primary" onClick={openNew}><i className="ti ti-plus" /> New Task</button>}
+        </div>
       </div>
 
       <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:12,marginBottom:18 }}>

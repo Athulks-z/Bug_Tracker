@@ -2,6 +2,7 @@ const router = require('express').Router();
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const rateLimit = require('express-rate-limit');
 const pool = require('../config/db');
 const { auth } = require('../middleware/auth');
 const { buildTaskVisibilityFilter } = require('../middleware/taskVisibility');
@@ -14,6 +15,7 @@ const {
 } = require('../middleware/roles');
 const { store, hydrateTask } = require('../services/data');
 const {
+  buildTaskWhere,
   queryTasks,
   findVisibleTask,
   findVisibleAttachment,
@@ -22,6 +24,16 @@ const {
 } = require('../services/taskQueries');
 const { queueAssignmentEmail, queueTaskBlockedEmail } = require('../services/emailService');
 const { notifyTaskStakeholders } = require('../services/notificationService');
+const {
+  validateExportRequest,
+  buildExportFilename,
+  ensureRowLimit,
+  exportColumns,
+  countExportRows,
+  streamCsv,
+  streamXlsx,
+  logExport
+} = require('../services/taskExport');
 const {
   sanitizeTaskDescription,
   validateAttachmentFilename,
@@ -34,6 +46,14 @@ if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const MAX_ATTACHMENT_MB = Number(process.env.MAX_ATTACHMENT_MB || 10);
 const MAX_ATTACHMENTS_PER_TASK = Number(process.env.MAX_ATTACHMENTS_PER_TASK || 10);
+const exportLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 10,
+  keyGenerator: (req) => String(req.user._id),
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, res) => res.status(429).json({ message: 'Export limit reached. Try again in a minute.' })
+});
 
 async function validateTaskType(typeValue, customTypeName) {
   const normalizedType = String(typeValue || '').trim().toLowerCase();
@@ -131,30 +151,54 @@ router.get('/types', auth, async (req, res) => {
   }
 });
 
-router.get('/export', auth, async (req, res) => {
+router.get('/export', auth, exportLimiter, async (req, res) => {
   try {
-    const firstPage = await queryTasks(req.user, { ...req.query, limit:200, page:1 });
-    const populated = [...firstPage.items];
-    for (let page = 2; populated.length < firstPage.total; page += 1) {
-      const result = await queryTasks(req.user, { ...req.query, limit:200, page });
-      if (!result.items.length) break;
-      populated.push(...result.items);
+    const config = req.app.locals.config;
+    const request = await validateExportRequest(req.user, req.query, pool);
+    const timezone = config.exportTimezone;
+    const where = buildTaskWhere(req.user, {
+      ...request.filters,
+      exportTimezone: timezone
+    });
+    const rowCount = await countExportRows(pool, where);
+    ensureRowLimit(rowCount, config.exportMaxRows);
+    const now = new Date();
+    const filename = buildExportFilename(request.lookups.typeLabels, request.format, now, timezone);
+    const columns = exportColumns(req.user);
+    await logExport(pool, req, req.user, request, rowCount, timezone);
+
+    res.setHeader('Content-Type', request.format === 'xlsx'
+      ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      : 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'no-store');
+
+    const streamOptions = { db: pool, res, where, request, columns, timezone, rowCount };
+    if (request.format === 'xlsx') {
+      await streamXlsx({ ...streamOptions, user: req.user, now });
+    } else {
+      await streamCsv(streamOptions);
     }
-    const escape = (value) => `"${String(value == null ? '' : value).replace(/"/g, '""')}"`;
-    const fields = ['Task ID', 'Title', 'Description', 'Type', 'Custom Type', 'Project', 'Project Key', 'Reporter', 'Reporter Email', 'Assignee', 'Assignee Email', 'Status', 'Priority', 'Start Date', 'End Date', 'Created At', 'Updated At'];
-    const rows = populated.map((task) => [
-      task._id, task.title, task.description,
-      task.type === 'other' ? (task.customTypeName ? `Other: ${task.customTypeName}` : 'Other') : task.type,
-      task.customTypeName || '', task.project?.name, task.project?.key,
-      task.reporter?.name, task.reporter?.email, task.assignee?.name, task.assignee?.email,
-      task.status, task.priority, task.startDate?.slice(0, 10), task.endDate?.slice(0, 10),
-      task.createdAt, task.updatedAt
-    ]);
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename="tasks.csv"');
-    res.send([fields, ...rows].map((row) => row.map(escape).join(',')).join('\r\n'));
   } catch (err) {
-    res.status(500).json({ message: 'Unable to export tasks' });
+    if (res.headersSent) {
+      console.error('Task export stream failed:', {
+        userId: req.user?._id,
+        format: req.query?.format || 'csv',
+        error: err.name
+      });
+      if (!res.destroyed) res.destroy();
+      return;
+    }
+    if (!err.status || err.status >= 500) {
+      console.error('Unable to export tasks:', {
+        userId: req.user?._id,
+        format: req.query?.format || 'csv',
+        error: err.name
+      });
+    }
+    res.status(err.status || 500).json({
+      message: err.status && err.status < 500 ? err.message : 'Unable to export tasks'
+    });
   }
 });
 

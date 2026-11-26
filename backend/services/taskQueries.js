@@ -42,6 +42,52 @@ function buildTaskWhere(user, query = {}, parameterIndex = 1) {
     add('lower(t.custom_type_name) = lower(?)', String(query.customTypeName).trim());
   }
 
+  if (query.priority) add('w.priority = ?', String(query.priority));
+
+  for (const [field, column, comparison] of [
+    ['startDateFrom', 'w.start_date', '>='],
+    ['startDateTo', 'w.start_date', '<='],
+    ['dueDateFrom', 'w.due_date', '>='],
+    ['dueDateTo', 'w.due_date', '<=']
+  ]) {
+    if (query[field]) add(`${column} ${comparison} ?::date`, String(query[field]));
+  }
+
+  if (query.createdFrom || query.createdTo) {
+    const timezone = String(query.exportTimezone || 'UTC');
+    for (const [field, comparison, addDay] of [
+      ['createdFrom', '>=', false],
+      ['createdTo', '<', true]
+    ]) {
+      if (!query[field]) continue;
+      values.push(String(query[field]), timezone);
+      const dateParameter = `$${parameterOffset + values.length - 1}`;
+      const timezoneParameter = `$${parameterOffset + values.length}`;
+      const dateExpression = addDay
+        ? `(${dateParameter}::date + INTERVAL '1 day')::timestamp`
+        : `${dateParameter}::date::timestamp`;
+      clauses.push(`w.created_at ${comparison} (${dateExpression} AT TIME ZONE ${timezoneParameter})`);
+    }
+  }
+
+  if (query.department) {
+    values.push(String(query.department));
+    const departmentParameter = `$${parameterOffset + values.length}`;
+    clauses.push(`EXISTS (
+      SELECT 1
+      FROM public.projects export_project
+      WHERE export_project.id=w.project_id
+        AND (
+          export_project.owning_department_id=${departmentParameter}
+          OR EXISTS (
+            SELECT 1 FROM public.project_departments export_department
+            WHERE export_department.project_id=export_project.id
+              AND export_department.department_id=${departmentParameter}
+          )
+        )
+    )`);
+  }
+
   if (STATUS_GROUPS.includes(query.statusGroup)) {
     values.push(query.statusGroup);
     clauses.push(`${STATUS_GROUP_EXPRESSION} = $${parameterOffset + values.length}`);
@@ -400,6 +446,7 @@ module.exports = {
   mapTask,
   addTaskChildren,
   buildTaskWhere,
+  sortExpression,
   queryTasks,
   findVisibleTask,
   findVisibleAttachment,

@@ -123,6 +123,58 @@ test('Microsoft Graph mailer retries 429 and honors Retry-After', async () => {
   assert.deepEqual(delays, [3000]);
 });
 
+test('Microsoft Graph mailer retries 500, 502, 503, and 504 with backoff', async () => {
+  for (const status of [500, 502, 503, 504]) {
+    const delays = [];
+    let calls = 0;
+    const mailer = createMailer({
+      config,
+      msalClient: createMsalClient(),
+      minSendIntervalMs: 0,
+      sleep: async (milliseconds) => { delays.push(milliseconds); },
+      logger: { error() {} },
+      fetchImpl: async () => {
+        calls += 1;
+        return calls === 1
+          ? graphResponse(status, { error: { message: `Temporary ${status} failure` } })
+          : graphResponse(202);
+      }
+    });
+
+    await mailer.sendMail({
+      to: ['person@example.com'],
+      subject: `Retry ${status} test`,
+      text: 'Hello'
+    });
+
+    assert.equal(calls, 2, `status ${status} should retry once`);
+    assert.deepEqual(delays, [1000], `status ${status} should use exponential backoff`);
+  }
+});
+
+test('Microsoft Graph mailer does not retry 501', async () => {
+  let calls = 0;
+  const delays = [];
+  const mailer = createMailer({
+    config,
+    msalClient: createMsalClient(),
+    minSendIntervalMs: 0,
+    sleep: async (milliseconds) => { delays.push(milliseconds); },
+    logger: { error() {} },
+    fetchImpl: async () => {
+      calls += 1;
+      return graphResponse(501, { error: { message: 'Not implemented' } });
+    }
+  });
+
+  await assert.rejects(
+    mailer.sendMail({ to: ['person@example.com'], subject: 'No retry', text: 'Hello' }),
+    (error) => error.statusCode === 501
+  );
+  assert.equal(calls, 1);
+  assert.deepEqual(delays, []);
+});
+
 test('Microsoft Graph mailer fails on 403 without retrying', async () => {
   let calls = 0;
   const mailer = createMailer({

@@ -88,6 +88,8 @@ export default function Tasks() {
     status: searchParams.get('status') || '',
     statusGroup: searchParams.get('statusGroup') || '',
     assignee: searchParams.getAll('assignee'),
+    dueDateFrom: searchParams.get('dueDateFrom') || '',
+    dueDateTo: searchParams.get('dueDateTo') || '',
     search: searchParams.get('search') || '',
     customTypeName: searchParams.get('customTypeName') || '',
     type: searchParams.getAll('type')
@@ -348,6 +350,18 @@ export default function Tasks() {
           onChange={(event) => { setPage(1); setFilters((current) => ({ ...current, statusGroup:event.target.value })) }}>
           <option value="">All status groups</option>{STATUS_GROUPS.map((group) => <option key={group}>{group}</option>)}
         </select>
+        <label>
+          <span className="sr-only">Due date from</span>
+          <input type="date" className="form-control" aria-label="Due date from"
+            value={filters.dueDateFrom}
+            onChange={(event) => { setPage(1); setFilters((current) => ({ ...current,dueDateFrom:event.target.value })) }} />
+        </label>
+        <label>
+          <span className="sr-only">Due date to</span>
+          <input type="date" className="form-control" aria-label="Due date to"
+            value={filters.dueDateTo}
+            onChange={(event) => { setPage(1); setFilters((current) => ({ ...current,dueDateTo:event.target.value })) }} />
+        </label>
         {showTeamControls && <MultiSelectDropdown label="Assignees"
           options={users.map((item) => ({ value:item._id,label:item.name }))}
           value={filters.assignee}

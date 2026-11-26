@@ -246,6 +246,11 @@ export default function Dashboard() {
             <StatCard label={teamView ? 'Rejected' : 'My rejected tasks'} value={summary.rejected} icon="ti-circle-x" color="#e24b4a" onClick={() => navigate(filteredTaskHref({ statusGroup:'Rejected' }))} />
             <StatCard label={teamView ? 'Overdue' : 'My overdue tasks'} value={summary.overdue} icon="ti-calendar-exclamation" color="#e24b4a" onClick={() => navigate(filteredTaskHref({ overdue:'true' }))} />
             <StatCard label={teamView ? 'Due today' : 'My tasks due today'} value={summary.due_today} icon="ti-calendar" color="#534ab7" onClick={() => navigate(filteredTaskHref({ dueToday:'true' }))} />
+            <StatCard label={teamView ? 'Due this week' : 'My tasks due this week'} value={summary.due_this_week} icon="ti-calendar-week" color="#0891b2"
+              onClick={() => navigate(filteredTaskHref({
+                dueDateFrom:summary.due_week_start,
+                dueDateTo:summary.due_week_end
+              }))} />
           </div>
 
           <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))',gap:16,marginBottom:16 }}>

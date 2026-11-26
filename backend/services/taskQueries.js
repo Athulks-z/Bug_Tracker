@@ -330,6 +330,13 @@ async function queryTaskDashboard(user, query = {}) {
       count(*) FILTER (WHERE ${STATUS_GROUP_EXPRESSION}='Rejected')::int AS rejected,
       count(*) FILTER (WHERE w.due_date < CURRENT_DATE AND w.status NOT IN ('Completed','Closed','Rejected','Resolved'))::int AS overdue,
       count(*) FILTER (WHERE w.due_date = CURRENT_DATE)::int AS due_today,
+      count(*) FILTER (
+        WHERE w.due_date >= date_trunc('week', CURRENT_DATE)::date
+          AND w.due_date < (date_trunc('week', CURRENT_DATE)::date + INTERVAL '1 week')
+          AND w.status NOT IN ('Completed','Closed','Rejected','Resolved')
+      )::int AS due_this_week,
+      to_char(date_trunc('week', CURRENT_DATE)::date, 'YYYY-MM-DD') AS due_week_start,
+      to_char((date_trunc('week', CURRENT_DATE)::date + INTERVAL '6 days')::date, 'YYYY-MM-DD') AS due_week_end,
       count(DISTINCT w.project_id)::int AS projects
       ${from}`, where.values),
     pool.query(`SELECT ${STATUS_GROUP_EXPRESSION} AS key,

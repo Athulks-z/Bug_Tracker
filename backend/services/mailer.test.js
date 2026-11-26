@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  createMailer, validateConfig, GRAPH_SCOPE
+  createMailer, validateConfig, GRAPH_SCOPE, appendEmailFooter, getEmailFooter
 } = require('./mailer');
 
 const config = {
@@ -65,7 +65,10 @@ test('Microsoft Graph mailer sends recipients, HTML, and file attachments on HTT
   const payload = JSON.parse(request.options.body);
   assert.equal(payload.saveToSentItems, false);
   assert.equal(payload.message.body.contentType, 'HTML');
-  assert.equal(payload.message.body.content, '<p>Hello</p>');
+  assert.match(payload.message.body.content, /^<p>Hello<\/p>/);
+  assert.match(payload.message.body.content, /<strong>Note:<\/strong>/);
+  assert.match(payload.message.body.content, /<strong>PS:<\/strong>/);
+  assert.equal(payload.message.body.content.split('This e-mail is generated from Task Tracker.').length - 1, 1);
   assert.deepEqual(payload.message.toRecipients, [{ emailAddress: { address: 'to@example.com' } }]);
   assert.deepEqual(payload.message.ccRecipients, [{ emailAddress: { address: 'cc@example.com' } }]);
   assert.deepEqual(payload.message.bccRecipients, [{ emailAddress: { address: 'bcc@example.com' } }]);
@@ -76,6 +79,24 @@ test('Microsoft Graph mailer sends recipients, HTML, and file attachments on HTT
     contentBytes: Buffer.from('report body').toString('base64')
   }]);
   assert.deepEqual(msalClient.requests, [{ scopes: [GRAPH_SCOPE] }]);
+});
+
+test('email footer is appended once to HTML and plain text, with an opt-out', () => {
+  const mail = appendEmailFooter({ html: '<p>Hello</p>', text: 'Hello' });
+  const footer = getEmailFooter();
+  assert.ok(mail.html.endsWith(footer.html));
+  assert.ok(mail.text.endsWith(footer.text));
+  assert.match(mail.text, /\n\n-{4,}\nRegards,/);
+  assert.equal(mail.html.split('This e-mail is generated from Task Tracker.').length - 1, 1);
+  assert.equal(mail.text.split('This e-mail is generated from Task Tracker.').length - 1, 1);
+
+  const alreadyAppended = appendEmailFooter(mail);
+  assert.equal(alreadyAppended.html, mail.html);
+  assert.equal(alreadyAppended.text, mail.text);
+
+  const skipped = appendEmailFooter({ html: '<p>Hello</p>', text: 'Hello', skipFooter: true });
+  assert.equal(skipped.html, '<p>Hello</p>');
+  assert.equal(skipped.text, 'Hello');
 });
 
 test('Microsoft Graph mailer retries 429 and honors Retry-After', async () => {

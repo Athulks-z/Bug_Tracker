@@ -6,6 +6,39 @@ const GRAPH_SEND_MAIL_ENDPOINT = 'https://graph.microsoft.com/v1.0/users';
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
 const MAX_RETRIES = 3;
 const MIN_SEND_INTERVAL_MS = 2500;
+const FOOTER_TEXT = [
+  'Regards,',
+  'Task Tracker Team',
+  '',
+  'Note: This is an auto-generated mail. Please do not reply.',
+  '',
+  'PS: This e-mail is generated from Task Tracker.'
+].join('\n');
+const FOOTER_HTML = '<hr style="border:0;border-top:1px solid #ddd;margin:16px 0 8px;">' +
+  '<div style="font-size:12px;color:#666;">' +
+  'Regards,<br>Task Tracker Team<br><br>' +
+  '<strong>Note:</strong> This is an auto-generated mail. Please do not reply.<br><br>' +
+  '<strong>PS:</strong> This e-mail is generated from Task Tracker.' +
+  '</div>';
+const FOOTER_MARKER = 'This e-mail is generated from Task Tracker.';
+
+function getEmailFooter() {
+  return { text: FOOTER_TEXT, html: FOOTER_HTML };
+}
+
+function appendEmailFooter(mail) {
+  if (mail.skipFooter) return mail;
+  const footer = getEmailFooter();
+  const text = String(mail.text || '');
+  const html = String(mail.html || '');
+  return {
+    ...mail,
+    text: text.includes(FOOTER_MARKER) ? text : `${text.trimEnd()}\n\n----------------------------------------\n${footer.text}`,
+    html: html.includes(FOOTER_MARKER)
+      ? html
+      : `${html.trimEnd()}${html.trim() ? '\n' : ''}${footer.html}`
+  };
+}
 
 class GraphMailError extends Error {
   constructor(status, message) {
@@ -111,16 +144,17 @@ function createMailer({
   let nextSendAt = 0;
 
   async function sendNow(mail) {
-    const attachments = await Promise.all((mail.attachments || []).map(graphAttachment));
-    const body = mail.html
-      ? { contentType: 'HTML', content: mail.html }
-      : { contentType: 'Text', content: mail.text || '' };
+    const outgoingMail = appendEmailFooter(mail);
+    const attachments = await Promise.all((outgoingMail.attachments || []).map(graphAttachment));
+    const body = outgoingMail.html
+      ? { contentType: 'HTML', content: outgoingMail.html }
+      : { contentType: 'Text', content: outgoingMail.text || '' };
     const message = {
-      subject: mail.subject || '',
+      subject: outgoingMail.subject || '',
       body,
-      toRecipients: graphRecipients(mail.to),
-      ccRecipients: graphRecipients(mail.cc),
-      bccRecipients: graphRecipients(mail.bcc)
+      toRecipients: graphRecipients(outgoingMail.to),
+      ccRecipients: graphRecipients(outgoingMail.cc),
+      bccRecipients: graphRecipients(outgoingMail.bcc)
     };
     if (attachments.length) message.attachments = attachments;
 
@@ -203,6 +237,8 @@ module.exports = {
   readConfig,
   validateConfig,
   sendMail,
+  getEmailFooter,
+  appendEmailFooter,
   GRAPH_SCOPE,
   MAX_RETRIES
 };

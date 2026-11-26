@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 
-export default function useAutoRefresh(refresh, intervalMs = 30000, enabled = true) {
+export default function useAutoRefresh(refresh, intervalMs = 10000, enabled = true) {
   const refreshRef = useRef(refresh)
   const runningRef = useRef(false)
 

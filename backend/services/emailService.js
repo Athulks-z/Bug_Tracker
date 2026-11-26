@@ -4,12 +4,15 @@ const sanitizeHtml = require('sanitize-html');
 const path = require('path');
 const pool = require('../config/db');
 const mailer = require('./mailer');
+const { getSenderEmail, isEmailEnabled } = require('./settingsService');
 const { notifyRecipients } = require('./notificationService');
 
 const SENDER_EMAIL = process.env.MS_SENDER || '';
 const MAX_ATTEMPTS = 5;
 const RETRY_INTERVAL_MS = 15000;
 const CLAIM_LEASE_MINUTES = 5;
+const MAX_DAILY_RECIPIENTS = 10000;
+const GLOBAL_SEND_INTERVAL_MS = 2500;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 let workerTimer;
@@ -110,7 +113,7 @@ function buildTaskBlockedRecipients(blocker, stakeholders) {
   for (const stakeholder of stakeholders || []) {
     const email = String(stakeholder.email || '').trim();
     if (!email || !EMAIL_PATTERN.test(email)) {
-      throw new Error('A project stakeholder does not have a valid email address');
+      throw new Error('An assignment email recipient does not have a valid email address');
     }
     const key = email.toLowerCase();
     if (seen.has(key)) continue;
@@ -222,6 +225,7 @@ function buildAssignmentContent({ kind, item, project, assignedBy, clientUrl, ac
 
 async function queueAssignmentEmail({ kind, item, project, assigneeId, assignedBy, ccUserIds }) {
   if (kind !== 'task') throw new TypeError('Unsupported assignment email type');
+  const senderEmail = await getSenderEmail();
   const hasSelectedRecipients = ccUserIds !== undefined;
   const selectedIds = hasSelectedRecipients ? [...new Set(ccUserIds.map(String))] : [];
   const [assigneeResult, stakeholderResult, assignedByResult, additionalRecipientsResult] = await Promise.all([
@@ -248,10 +252,12 @@ async function queueAssignmentEmail({ kind, item, project, assigneeId, assignedB
   if (additionalRecipientsResult.rows.length !== selectedIds.length) {
     throw new Error('One or more assignment email CC recipients are inactive or no longer exist');
   }
-  const ccRecipients = hasSelectedRecipients
-    ? additionalRecipientsResult.rows
-    : stakeholderResult.rows;
-  const { to, cc } = buildRecipients(assignee, ccRecipients);
+  const { to, cc } = buildRecipients(
+    assignee,
+    stakeholderResult.rows,
+    senderEmail,
+    hasSelectedRecipients ? additionalRecipientsResult.rows : []
+  );
   const token = crypto.randomBytes(32).toString('hex');
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
   const responsePage = new URL('/assignment-response', `${(process.env.CLIENT_URL || 'http://localhost:3000').split(',')[0].trim().replace(/\/+$/, '')}/`);
@@ -458,7 +464,7 @@ async function claimEmail() {
   try {
     await client.query('BEGIN');
     const { rows } = await client.query(
-      `SELECT id, subject, payload, attempts
+      `SELECT id, event_type, subject, payload, attempts
        FROM public.email_outbox
        WHERE status IN ('pending', 'sending') AND next_attempt_at <= now()
        ORDER BY created_at, id
@@ -470,6 +476,77 @@ async function claimEmail() {
       return null;
     }
     const email = rows[0];
+    if (!await isEmailEnabled(email.event_type)) {
+      await client.query(
+        `UPDATE public.email_outbox
+         SET status='skipped',last_error='Skipped by application email settings'
+         WHERE id=$1`,
+        [email.id]
+      );
+      await client.query(
+        `UPDATE public.email_recipients SET delivery_status='skipped' WHERE email_outbox_id=$1`,
+        [email.id]
+      );
+      await client.query('COMMIT');
+      console.info('Outgoing email skipped by application settings', { eventType:email.event_type });
+      return { id:email.id, skipped:true };
+    }
+
+    const recipientCount = await client.query(
+      'SELECT count(*)::int AS count FROM public.email_recipients WHERE email_outbox_id=$1',
+      [email.id]
+    );
+    const budgetResult = await client.query(
+      'SELECT next_send_at,recipient_day,recipients_reserved FROM public.email_delivery_limits WHERE id=1 FOR UPDATE'
+    );
+    const budget = budgetResult.rows[0];
+    const currentDay = await client.query('SELECT CURRENT_DATE AS today');
+    let recipientsReserved = Number(budget.recipients_reserved);
+    let nextSendAt = budget.next_send_at;
+    if (String(budget.recipient_day).slice(0,10) !== String(currentDay.rows[0].today).slice(0,10)) {
+      recipientsReserved = 0;
+      nextSendAt = new Date(0);
+    }
+    if (new Date(nextSendAt).getTime() > Date.now()) {
+      await client.query(
+        'UPDATE public.email_outbox SET next_attempt_at=$2 WHERE id=$1',
+        [email.id,nextSendAt]
+      );
+      if (String(budget.recipient_day).slice(0,10) !== String(currentDay.rows[0].today).slice(0,10)) {
+        await client.query(
+          'UPDATE public.email_delivery_limits SET recipient_day=$1,recipients_reserved=0,next_send_at=now() WHERE id=1',
+          [currentDay.rows[0].today]
+        );
+      }
+      await client.query('COMMIT');
+      return { rateLimitedUntil:nextSendAt };
+    }
+    if (recipientsReserved + recipientCount.rows[0].count > MAX_DAILY_RECIPIENTS) {
+      await client.query(
+        `UPDATE public.email_outbox SET status='failed',last_error=$2 WHERE id=$1`,
+        [email.id,`Daily recipient limit of ${MAX_DAILY_RECIPIENTS} reached`]
+      );
+      await client.query(
+        `UPDATE public.email_recipients SET delivery_status='failed' WHERE email_outbox_id=$1`,
+        [email.id]
+      );
+      await client.query('COMMIT');
+      console.error('Outgoing email stopped at the daily recipient limit', {
+        eventType:email.event_type,
+        recipientCount:recipientCount.rows[0].count
+      });
+      return { id:email.id, quotaExceeded:true };
+    }
+    await client.query(
+      `UPDATE public.email_delivery_limits
+       SET recipient_day=$1,recipients_reserved=$2,next_send_at=now()+($3 * interval '1 millisecond')
+       WHERE id=1`,
+      [
+        currentDay.rows[0].today,
+        recipientsReserved + recipientCount.rows[0].count,
+        GLOBAL_SEND_INTERVAL_MS
+      ]
+    );
     email.attempts += 1;
     await client.query(
       `UPDATE public.email_outbox
@@ -516,8 +593,15 @@ async function claimEmail() {
 async function deliverNextEmail() {
   const email = await claimEmail();
   if (!email) return false;
+  if (email.rateLimitedUntil) {
+    const waitMs = Math.max(0,new Date(email.rateLimitedUntil).getTime() - Date.now());
+    if (waitMs) await new Promise((resolve) => setTimeout(resolve,waitMs));
+    return true;
+  }
+  if (email.skipped || email.quotaExceeded) return true;
   try {
-    await mailer.sendMail({
+    const delivery = await mailer.sendMail({
+      eventType:email.event_type,
       to: email.to,
       cc: email.cc,
       subject: email.subject,
@@ -525,6 +609,18 @@ async function deliverNextEmail() {
       html: email.payload.html,
       attachments: email.attachments || []
     });
+    if (delivery?.skipped) {
+      await pool.query(
+        `UPDATE public.email_outbox SET status='skipped',last_error='Skipped by application email settings'
+         WHERE id=$1`,
+        [email.id]
+      );
+      await pool.query(
+        `UPDATE public.email_recipients SET delivery_status='skipped' WHERE email_outbox_id=$1`,
+        [email.id]
+      );
+      return true;
+    }
   } catch (error) {
     const failure = getDeliveryFailure(error, email.attempts);
     const delayMinutes = Math.min(60, 2 ** (email.attempts - 1));
@@ -747,6 +843,7 @@ function startEmailWorker() {
 
 module.exports = {
   SENDER_EMAIL,
+  getSenderEmail,
   validateEmailConfig: mailer.validateConfig,
   escapeHtml,
   buildRecipients,

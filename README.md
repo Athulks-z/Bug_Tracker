@@ -11,6 +11,7 @@ A bug tracker built with React, Node.js, Express, and PostgreSQL storage.
 - Assignment emails for tasks and issues, with project stakeholders and the configured sender copied
 - Admin user management
 - Dashboard, reports, tasks, sprints, releases, notifications, and issue templates
+- Admin and Super Admin settings for email controls, storage reporting, and announcements
 
 ## PostgreSQL setup
 
@@ -50,6 +51,8 @@ Outgoing email is sent through Microsoft Graph using OAuth 2.0 client credential
 - `MS_SENDER`: mailbox user principal name or email address used by Graph's `/users/{sender}/sendMail` endpoint.
 
 The backend validates that these settings are present at startup. The Graph mail service caches OAuth tokens, limits delivery to about 24 messages per minute per running process, retries throttled/transient Graph responses, and records outbox delivery state in PostgreSQL.
+
+Admins can manage master and per-event email settings, in-app notifications, storage reporting, and announcements from **Settings**. Only Super Admins can change the Graph sender mailbox, and a successful test email is required before saving a new sender. Set `ALLOWED_SENDER_DOMAINS` to a comma-separated allow-list (for example `z-crossing.com`) before enabling a custom sender. Set optional `STORAGE_LIMIT_MB` to display a combined database-and-uploads quota.
 
 Add project stakeholders in **Admin → Projects → Edit Project → Assignment Email CC**. When a task or issue is assigned or reassigned, the assignee receives the email; the selected project stakeholders and configured sender are copied. The assignee can accept from the email to move the item to **In progress**, or reject with required closing remarks. Rejection sets the item status to **Rejected** and queues a notice with those remarks to the assignee and project stakeholders. Action links are single-use, expire after 14 days, and stop working if the work item is reassigned.
 

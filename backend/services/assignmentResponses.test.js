@@ -110,8 +110,11 @@ test('accepting an assignment advances it to In progress and rejects token reuse
 });
 
 test('rejecting an assignment requires and records closing remarks', async () => {
-  const fixture = await createFixture();
+  const senderTestLock = await pool.connect();
+  await senderTestLock.query('SELECT pg_advisory_lock($1)', [671230980]);
+  let fixture;
   try {
+    fixture = await createFixture();
     await assert.rejects(
       respondToAssignment({ token: fixture.token, action: 'reject', closingRemarks: '  ' }),
       error => error instanceof AssignmentResponseError && error.status === 400
@@ -152,6 +155,11 @@ test('rejecting an assignment requires and records closing remarks', async () =>
     assert.ok(ccEmails.includes(fixture.stakeholder.email));
     if (process.env.MS_SENDER) assert.ok(ccEmails.includes(process.env.MS_SENDER));
   } finally {
-    await cleanup(fixture);
+    if (fixture) await cleanup(fixture);
+    try {
+      await senderTestLock.query('SELECT pg_advisory_unlock($1)', [671230980]);
+    } finally {
+      senderTestLock.release();
+    }
   }
 });

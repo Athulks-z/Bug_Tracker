@@ -143,6 +143,49 @@ test('Microsoft Graph mailer fails on 403 without retrying', async () => {
   assert.equal(calls, 1);
 });
 
+test('Microsoft Graph mailer skips sends disabled by global or per-event settings', async () => {
+  let calls = 0;
+  const skippedEvents = [];
+  const makeMailerWith = (settings) => createMailer({
+    config,
+    msalClient:createMsalClient(),
+    settingsProvider:async () => settings,
+    minSendIntervalMs:0,
+    logger:{ error() {},info(_message,context) { skippedEvents.push(context.eventType) } },
+    fetchImpl:async () => { calls += 1;return graphResponse(202) }
+  });
+
+  const globallyDisabled = await makeMailerWith({
+    emailEnabled:false,emailEvents:{ task_assigned:true }
+  }).sendMail({ eventType:'task_assigned',to:['person@example.com'],subject:'Disabled',text:'Hello' });
+  const eventDisabled = await makeMailerWith({
+    emailEnabled:true,emailEvents:{ task_assigned:false }
+  }).sendMail({ eventType:'task_assigned',to:['person@example.com'],subject:'Disabled',text:'Hello' });
+
+  assert.deepEqual(globallyDisabled,{ skipped:true });
+  assert.deepEqual(eventDisabled,{ skipped:true });
+  assert.equal(calls,0);
+  assert.deepEqual(skippedEvents,['task_assigned','task_assigned']);
+});
+
+test('Microsoft Graph mailer sends through a custom sender when provided', async () => {
+  let requestUrl;
+  const mailer = createMailer({
+    config,
+    msalClient:createMsalClient(),
+    minSendIntervalMs:0,
+    logger:{ error() {} },
+    fetchImpl:async (url) => { requestUrl = url;return graphResponse(202) }
+  });
+  await mailer.sendMail({
+    sender:'custom@example.com',
+    to:['person@example.com'],
+    subject:'Custom sender',
+    text:'Hello'
+  });
+  assert.equal(requestUrl,'https://graph.microsoft.com/v1.0/users/custom%40example.com/sendMail');
+});
+
 test('Microsoft Graph mailer reports missing configuration', () => {
   assert.throws(
     () => validateConfig({}),

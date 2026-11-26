@@ -76,6 +76,9 @@ try {
     app.use('/api/tasks', require('./routes/tasks'));
     app.use('/api/work-types', require('./routes/workTypes'));
     app.use('/api/notifications', require('./routes/notifications'));
+    const settingsRoutes = require('./routes/settings');
+    app.use('/api/settings/announcements', settingsRoutes.userAnnouncementsRouter);
+    app.use('/api/settings', settingsRoutes.router);
     app.use('/api/sprints', require('./routes/sprints'));
 
     app.use('/api/releases', require('./routes/releases'));

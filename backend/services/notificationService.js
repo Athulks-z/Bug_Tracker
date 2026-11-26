@@ -1,5 +1,6 @@
 const { randomUUID } = require('crypto');
 const pool = require('../config/db');
+const { getSettings } = require('./settingsService');
 
 async function insertNotification(client, notification) {
   const {
@@ -50,6 +51,7 @@ async function notifyRecipients({
   const ownsClient = !transactionClient;
   let savepoint = false;
   try {
+    if (!(await getSettings()).inAppNotificationsEnabled) return 0;
     if (!client) client = await pool.connect();
     if (ownsClient) await client.query('BEGIN');
     else {

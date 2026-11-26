@@ -16,6 +16,12 @@ test('loads safe local defaults and a 12-hour token lifetime', () => {
   assert.equal(config.maxUploadMb, 5);
   assert.equal(config.databasePoolMax, 10);
   assert.equal(config.blockCloseWithOpenTasks, false);
+  assert.equal(config.storageLimitMb, null);
+});
+
+test('validates the optional storage quota', () => {
+  assert.equal(loadConfig({ ...validEnv,STORAGE_LIMIT_MB:'1024' }).storageLimitMb,1024);
+  assert.throws(() => loadConfig({ ...validEnv,STORAGE_LIMIT_MB:'-1' }),/STORAGE_LIMIT_MB/);
 });
 
 test('validates the open-task project closure policy flag', () => {

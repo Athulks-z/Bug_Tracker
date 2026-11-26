@@ -6,6 +6,10 @@ const { notifyRecipients } = require('./notificationService');
 test('notification delivery excludes the actor, deduplicates recipients, and links task resources', async (t) => {
   const queries = [];
   const originalConnect = pool.connect;
+  const originalQuery = pool.query;
+  pool.query = (sql, ...args) => String(sql).includes('SELECT key,value FROM public.app_settings')
+    ? Promise.resolve({ rows:[] })
+    : originalQuery.call(pool,sql,...args);
   pool.connect = async () => ({
     async query(sql, values = []) {
       queries.push({ sql, values });
@@ -16,7 +20,10 @@ test('notification delivery excludes the actor, deduplicates recipients, and lin
     },
     release() {}
   });
-  t.after(() => { pool.connect = originalConnect; });
+  t.after(() => {
+    pool.connect = originalConnect;
+    pool.query = originalQuery;
+  });
 
   const created = await notifyRecipients({
     recipients: [
@@ -50,7 +57,11 @@ test('notification delivery excludes the actor, deduplicates recipients, and lin
 test('notification delivery rolls back to its savepoint on persistence failure', async (t) => {
   const queries = [];
   const originalConnect = pool.connect;
+  const originalQuery = pool.query;
   const originalConsoleError = console.error;
+  pool.query = (sql, ...args) => String(sql).includes('SELECT key,value FROM public.app_settings')
+    ? Promise.resolve({ rows:[] })
+    : originalQuery.call(pool,sql,...args);
   pool.connect = async () => ({
     async query(sql) {
       queries.push(sql);
@@ -62,6 +73,7 @@ test('notification delivery rolls back to its savepoint on persistence failure',
   console.error = () => {};
   t.after(() => {
     pool.connect = originalConnect;
+    pool.query = originalQuery;
     console.error = originalConsoleError;
   });
 

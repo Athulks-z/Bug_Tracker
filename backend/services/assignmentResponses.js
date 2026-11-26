@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const pool = require('../config/db');
 const {
-  SENDER_EMAIL,
+  getSenderEmail,
   buildAssignmentRejectedContent
 } = require('./emailService');
 const { notifyRecipients } = require('./notificationService');
@@ -128,6 +128,7 @@ async function respondToAssignment({ token, action, closingRemarks }) {
       ]
     );
     if (action === 'reject') {
+      const senderEmail = await getSenderEmail();
       const { rows: stakeholderRows } = await client.query(
         `SELECT u.id, u.name, u.email
          FROM public.project_stakeholders ps
@@ -138,7 +139,7 @@ async function respondToAssignment({ token, action, closingRemarks }) {
       );
       const recipients = [];
       const seen = new Set([assignment.assignee_email_snapshot.toLowerCase()]);
-      for (const stakeholder of [...stakeholderRows, { id: null, name: 'TaskTracker Admin', email: SENDER_EMAIL }]) {
+      for (const stakeholder of [...stakeholderRows, { id: null, name: 'TaskTracker Admin', email: senderEmail }]) {
         const email = String(stakeholder.email || '').trim();
         const key = email.toLowerCase();
         if (!email || seen.has(key)) continue;

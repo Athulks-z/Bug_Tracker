@@ -73,6 +73,11 @@ function loadConfig(env = process.env) {
   } catch {
     throw new Error('EXPORT_TIMEZONE must be a valid IANA timezone');
   }
+  const storageLimitMb = env.STORAGE_LIMIT_MB ? Number(env.STORAGE_LIMIT_MB) : null;
+  if (storageLimitMb !== null
+    && (!Number.isInteger(storageLimitMb) || storageLimitMb < 1 || storageLimitMb > 1000000000)) {
+    throw new Error('STORAGE_LIMIT_MB must be a positive integer');
+  }
   const blockCloseWithOpenTasksValue = String(env.BLOCK_CLOSE_WITH_OPEN_TASKS || 'false').toLowerCase();
   if (!['true','false'].includes(blockCloseWithOpenTasksValue)) {
     throw new Error('BLOCK_CLOSE_WITH_OPEN_TASKS must be true or false');
@@ -93,6 +98,7 @@ function loadConfig(env = process.env) {
     maxAttachmentsPerTask,
     exportMaxRows,
     exportTimezone,
+    storageLimitMb,
     blockCloseWithOpenTasks: blockCloseWithOpenTasksValue === 'true',
     jsonLimit: `${Math.ceil(Math.max(maxUploadMb, maxAttachmentMb) * 1.4)}mb`
   };

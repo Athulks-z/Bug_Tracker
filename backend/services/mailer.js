@@ -125,6 +125,7 @@ async function graphAttachment(attachment) {
 function createMailer({
   config: suppliedConfig = readConfig(),
   msalClient: suppliedMsalClient,
+  settingsProvider,
   fetchImpl = globalThis.fetch,
   sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
   now = Date.now,
@@ -144,6 +145,7 @@ function createMailer({
   let nextSendAt = 0;
 
   async function sendNow(mail) {
+    const sender = mail.sender || config.sender;
     const outgoingMail = appendEmailFooter(mail);
     const attachments = await Promise.all((outgoingMail.attachments || []).map(graphAttachment));
     const body = outgoingMail.html
@@ -167,7 +169,7 @@ function createMailer({
       if (!tokenResult?.accessToken) throw new Error('Microsoft identity platform returned no access token');
 
       const response = await fetchImpl(
-        `${GRAPH_SEND_MAIL_ENDPOINT}/${encodeURIComponent(config.sender)}/sendMail`,
+        `${GRAPH_SEND_MAIL_ENDPOINT}/${encodeURIComponent(sender)}/sendMail`,
         {
           method: 'POST',
           headers: {
@@ -200,7 +202,21 @@ function createMailer({
   function sendMail(mail) {
     const job = queue.then(async () => {
       try {
+        if (settingsProvider) {
+          const settings = await settingsProvider();
+          const eventType = mail.eventType || 'settings_test';
+          if (!settings.emailEnabled || settings.emailEvents[eventType] === false) {
+            logger.info('Email skipped by application settings', {
+              eventType,
+              recipientCount: graphRecipients(mail.to).length
+                + graphRecipients(mail.cc).length
+                + graphRecipients(mail.bcc).length
+            });
+            return { skipped:true };
+          }
+        }
         await sendNow(mail);
+        return { skipped:false };
       } catch (error) {
         const status = error.statusCode || error.responseCode || '';
         const message = String(error.message || 'Email delivery failed')
@@ -227,7 +243,11 @@ function createMailer({
 let defaultMailer;
 
 function sendMail(mail) {
-  if (!defaultMailer) defaultMailer = createMailer();
+  if (!defaultMailer) {
+    defaultMailer = createMailer({
+      settingsProvider:() => require('./settingsService').getSettings()
+    });
+  }
   return defaultMailer.sendMail(mail);
 }
 

@@ -13,6 +13,7 @@ import ProjectDetail from './pages/ProjectDetail';
 import Sprints from './pages/Sprints';
 import Releases from './pages/Releases';
 import Profile from './pages/Profile';
+import Settings from './pages/Settings';
 import AssignmentResponse from './pages/AssignmentResponse';
 import Layout from './components/Layout';
 
@@ -61,6 +62,7 @@ export default function App() {
             <Route path="issues" element={<LegacyIssueRedirect />} />
             <Route path="issues/*" element={<LegacyIssueRedirect />} />
             <Route path="profile" element={<Profile />} />
+            <Route path="settings" element={<AdminRoute><Settings /></AdminRoute>} />
             <Route path="sprints" element={<Sprints />} />
             <Route path="releases" element={<Releases />} />
             <Route path="admin/users" element={<AdminRoute><AdminUsers /></AdminRoute>} />

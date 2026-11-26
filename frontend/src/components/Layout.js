@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
+import AnnouncementPopup from './AnnouncementPopup';
 
 const navStyle = (active) => ({
   display:'flex', alignItems:'center', gap:10, padding:'9px 16px',
@@ -50,6 +51,7 @@ export default function Layout() {
               {[
                 { to:'/admin/users', icon:'ti-users', label:'Users' },
                 { to:'/admin/projects', icon:'ti-folder', label:'Projects' },
+                { to:'/settings', icon:'ti-settings', label:'Settings' },
               ].map(item => (
                 <NavLink key={item.to} to={item.to} style={({ isActive }) => navStyle(isActive)}>
                   <i className={`ti ${item.icon}`} style={{ fontSize:16, flexShrink:0 }} />
@@ -98,6 +100,7 @@ export default function Layout() {
         </header>
         <Outlet />
       </main>
+      <AnnouncementPopup user={user} />
     </div>
   );
 }

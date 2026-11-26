@@ -37,6 +37,11 @@ export default function NotificationBell() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [actionError, setActionError] = useState('');
+  const [desktopPermission, setDesktopPermission] = useState(() => (
+    typeof window !== 'undefined' && 'Notification' in window
+      ? window.Notification.permission
+      : 'unsupported'
+  ));
 
   openRef.current = open;
   filterRef.current = filter;
@@ -64,11 +69,14 @@ export default function NotificationBell() {
 
   useEffect(() => {
     let active = true;
+    let polling = false;
     const poll = async () => {
+      if (document.visibilityState !== 'visible' || polling) return;
+      polling = true;
       try {
         const result = await api.get('/notifications', {
           page: 1,
-          limit: openRef.current ? 20 : 5,
+          limit: 20,
           filter: 'all'
         });
         if (!active) return;
@@ -76,10 +84,30 @@ export default function NotificationBell() {
         setUnreadCount(Number(result.unreadCount) || 0);
         const latestIds = new Set(latest.map((item) => item.id || item._id));
         if (initializedRef.current) {
-          const newlyReceived = latest.find((item) => !knownIdsRef.current.has(item.id || item._id));
-          if (newlyReceived) {
-            toast(`New notification: ${newlyReceived.title}`);
-          }
+          const newlyReceived = latest.filter((item) => (
+            !item.isRead && !knownIdsRef.current.has(item.id || item._id)
+          ));
+          newlyReceived.forEach((item) => {
+            toast(`New notification: ${item.title}`);
+            if (desktopPermission === 'granted') {
+              try {
+                const desktopNotification = new window.Notification(item.title, {
+                  body: item.message,
+                  icon: '/favicon.ico',
+                  tag: item.id || item._id
+                });
+                desktopNotification.onclick = () => {
+                  window.focus();
+                  if (item.link?.startsWith('/') && !item.link.startsWith('//')) {
+                    navigate(item.link);
+                  }
+                  desktopNotification.close();
+                };
+              } catch (notificationError) {
+                console.error('Unable to display browser notification:', notificationError.name);
+              }
+            }
+          });
         } else {
           initializedRef.current = true;
         }
@@ -93,15 +121,42 @@ export default function NotificationBell() {
         }
       } catch (requestError) {
         if (active && openRef.current) setError(requestError.message || 'Unable to refresh notifications');
+      } finally {
+        polling = false;
       }
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void poll();
     };
     void poll();
     const timer = window.setInterval(poll, 30000);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('focus', poll);
     return () => {
       active = false;
       window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('focus', poll);
     };
-  }, []);
+  }, [desktopPermission, navigate]);
+
+  const enableDesktopNotifications = async () => {
+    if (!('Notification' in window)) {
+      setDesktopPermission('unsupported');
+      return;
+    }
+    try {
+      const permission = await window.Notification.requestPermission();
+      setDesktopPermission(permission);
+      if (permission === 'granted') toast.success('Desktop notifications enabled');
+      else if (permission === 'denied') {
+        toast.error('Notifications are blocked for this site. Allow them in your browser settings.');
+      }
+    } catch (permissionError) {
+      console.error('Unable to request browser notification permission:', permissionError.name);
+      toast.error('Unable to enable desktop notifications');
+    }
+  };
 
   useEffect(() => {
     if (!open) return undefined;
@@ -244,6 +299,22 @@ export default function NotificationBell() {
               <span>{unreadCount} unread</span>
             </div>
             <div className="notification-panel-actions">
+              {desktopPermission === 'default' && (
+                <button type="button" className="notification-alert-toggle" onClick={enableDesktopNotifications}>
+                  Enable desktop alerts
+                </button>
+              )}
+              {desktopPermission === 'granted' && (
+                <span className="notification-permission-status">Desktop alerts on</span>
+              )}
+              {desktopPermission === 'denied' && (
+                <span className="notification-permission-status" title="Allow notifications in browser site settings">
+                  Alerts blocked by browser
+                </span>
+              )}
+              {desktopPermission === 'unsupported' && (
+                <span className="notification-permission-status">Browser alerts unavailable</span>
+              )}
               <button type="button" onClick={markAllRead} disabled={!unreadCount}>Mark all as read</button>
               <button type="button" onClick={clearRead}>Clear read</button>
             </div>

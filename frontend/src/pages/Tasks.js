@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
 import { fmtDate } from '../utils'
 import RichTextEditor from '../components/RichTextEditor'
+import useAutoRefresh from '../hooks/useAutoRefresh'
 
 const STATUSES = ['Open','To do','In Progress','Blocked','Completed','Closed','Rejected','Code Review','QA Testing','Reopened']
 const PRIORITIES = ['Critical','High','Medium','Low']
@@ -97,8 +98,8 @@ export default function Tasks() {
     severity:'', foundInVersion:'', fixedInVersion:'', targetRelease:'', sprint:'', estimatedHours:''
   })
 
-  const loadTasks = useCallback(async () => {
-    setLoading(true)
+  const loadTasks = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true)
     try {
       const params = { ...filters, limit: pageSize, page }
       const [items, count] = await Promise.all([
@@ -110,7 +111,7 @@ export default function Tasks() {
     } catch (err) {
       toast.error(err.message)
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [filters, page])
 
@@ -141,6 +142,7 @@ export default function Tasks() {
   useEffect(() => {
     loadTasks()
   }, [loadTasks])
+  useAutoRefresh(loadTasks)
 
   useEffect(() => {
     if (!backlogMode || !backlogProjectId) return

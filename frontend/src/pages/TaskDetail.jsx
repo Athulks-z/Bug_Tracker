@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import api from '../api'
 import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
 import DOMPurify from 'dompurify'
+import useAutoRefresh from '../hooks/useAutoRefresh'
 
 DOMPurify.addHook('afterSanitizeAttributes', (node) => {
   if (node.tagName === 'A') {
@@ -56,18 +57,19 @@ export default function TaskDetail() {
     }
   }, [preview])
 
-  const load = async () => {
-    setLoading(true)
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true)
     try {
       setTask(await api.get(`/tasks/${id}`))
     } catch (err) {
       toast.error(err.message)
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
-  }
+  }, [id])
 
-  useEffect(() => { load() }, [id])
+  useEffect(() => { void load() }, [load])
+  useAutoRefresh(load)
 
   const recordId = (value) => typeof value === 'object' && value !== null ? value._id : value
   const canAct = task && (['super_admin','admin','manager'].includes(user?.role)

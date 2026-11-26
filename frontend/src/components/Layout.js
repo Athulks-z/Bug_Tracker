@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import NotificationBell from './NotificationBell';
 
 const navStyle = (active) => ({
   display:'flex', alignItems:'center', gap:10, padding:'9px 16px',
@@ -87,7 +88,14 @@ export default function Layout() {
       </aside>
 
       {/* Main */}
-      <main style={{ flex:1, overflow:'auto', background:'#f5f7fa' }}>
+      <main style={{ flex:1, minWidth:0, overflow:'auto', background:'#f5f7fa' }}>
+        <header style={{
+          position:'sticky',top:0,zIndex:15,height:58,display:'flex',justifyContent:'flex-end',
+          alignItems:'center',padding:'0 24px',background:'#fff',
+          borderBottom:'1px solid #e2e8f0',overflow:'visible'
+        }}>
+          <NotificationBell />
+        </header>
         <Outlet />
       </main>
     </div>

@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import api from '../api'
 import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
+import useAutoRefresh from '../hooks/useAutoRefresh'
 
 export default function Projects() {
   const { user } = useAuth()
@@ -12,16 +13,21 @@ export default function Projects() {
   const [total, setTotal] = useState(0)
   const [statusFilter, setStatusFilter] = useState('')
 
-  useEffect(() => {
-    setLoading(true)
-    api.getWithMeta('/projects', { page, limit:100,status:statusFilter })
-      .then((result) => {
-        setProjects(result.data)
-        setTotal(result.total)
-      })
-      .catch((error) => toast.error(error.message))
-      .finally(() => setLoading(false))
+  const loadProjects = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true)
+    try {
+      const result = await api.getWithMeta('/projects', { page, limit:100,status:statusFilter })
+      setProjects(result.data)
+      setTotal(result.total)
+    } catch (error) {
+      toast.error(error.message)
+    } finally {
+      if (!silent) setLoading(false)
+    }
   }, [page,statusFilter])
+
+  useEffect(() => { void loadProjects() }, [loadProjects])
+  useAutoRefresh(loadProjects)
 
   const statusLabel = (project) => project.statusLabel
     || (project.status === 'active' ? 'In Progress' : project.status)

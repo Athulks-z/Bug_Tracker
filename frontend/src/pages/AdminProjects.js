@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
+import useAutoRefresh from '../hooks/useAutoRefresh';
 
 const inputStyle = { width:'100%', padding:'9px 12px', border:'1px solid #e2e8f0', borderRadius:8, fontSize:13, color:'#1a202c', outline:'none' };
 
@@ -22,22 +23,27 @@ export default function AdminProjects() {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    setLoading(true);
+  const loadProjects = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     setError('');
-    api.getWithMeta('/projects', { page, limit:100 })
-      .then(async (result) => {
-        const p = result.data;
-        setTotal(result.total);
-        setProjects(p);
-        const lists = membershipOnly
-          ? await Promise.all(p.map(project => api.get('/users', { available:true, assignable:true, project:project._id })))
-          : [await api.get('/users')];
-        setUsers([...new Map(lists.flat().map(member => [member._id, member])).values()]);
-      })
-      .catch((loadError) => setError(loadError.message))
-      .finally(()=>setLoading(false));
+    try {
+      const result = await api.getWithMeta('/projects', { page, limit:100 });
+      const p = result.data;
+      setTotal(result.total);
+      setProjects(p);
+      const lists = membershipOnly
+        ? await Promise.all(p.map(project => api.get('/users', { available:true, assignable:true, project:project._id })))
+        : [await api.get('/users')];
+      setUsers([...new Map(lists.flat().map(member => [member._id, member])).values()]);
+    } catch (loadError) {
+      setError(loadError.message);
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }, [page, membershipOnly]);
+
+  useEffect(() => { void loadProjects() }, [loadProjects]);
+  useAutoRefresh(loadProjects);
 
   const openNew = () => {
     if (membershipOnly) return;

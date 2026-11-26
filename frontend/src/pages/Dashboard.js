@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
-import NotificationBell from '../components/NotificationBell';
+import useAutoRefresh from '../hooks/useAutoRefresh';
 
 const COLORS = ['#378add','#1d9e75','#ef9f27','#e24b4a','#534ab7','#0891b2','#64748b'];
 const isTeamRole = (role) => ['super_admin','admin','manager'].includes(role);
@@ -112,8 +112,8 @@ export default function Dashboard() {
 
   const canSelectMyTasks = !filters.project || projectIncludesEmployee(filters.project, user?._id);
 
-  const loadDashboard = useCallback(async () => {
-    setLoading(true);
+  const loadDashboard = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     setError('');
     try {
       const params = {};
@@ -124,7 +124,7 @@ export default function Dashboard() {
     } catch (requestError) {
       setError(requestError.message || 'Unable to load dashboard');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [filters, teamView]);
 
@@ -141,6 +141,23 @@ export default function Dashboard() {
       setTypes(typeItems);
     }).catch((requestError) => setError(requestError.message || 'Unable to load dashboard filters'));
   }, [teamView]);
+  const refreshDashboard = useCallback(async (options) => {
+    await loadDashboard(options);
+    if (!teamView) return;
+    try {
+      const [projectItems, userItems, typeItems] = await Promise.all([
+        api.get('/projects'),
+        api.get('/users', { taskAssignees:true }),
+        api.get('/tasks/types')
+      ]);
+      setProjects(projectItems);
+      setUsers(userItems);
+      setTypes(typeItems);
+    } catch (requestError) {
+      setError(requestError.message || 'Unable to refresh dashboard filters');
+    }
+  }, [loadDashboard, teamView]);
+  useAutoRefresh(refreshDashboard);
 
   const summary = data?.summary || {};
   const taskHref = (params = {}) => {
@@ -167,7 +184,6 @@ export default function Dashboard() {
           <h1 style={{ fontSize:22,fontWeight:700,color:'#1a202c',margin:0 }}>Dashboard</h1>
           <p style={{ color:'#64748b',fontSize:14,marginTop:4 }}>Welcome back, {user?.name}</p>
         </div>
-        <NotificationBell />
       </header>
 
       {teamView && (

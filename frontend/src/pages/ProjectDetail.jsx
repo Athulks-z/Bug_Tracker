@@ -4,6 +4,7 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 import api from '../api'
 import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
+import useAutoRefresh from '../hooks/useAutoRefresh'
 
 const today = () => {
   const date = new Date()
@@ -32,7 +33,7 @@ export default function ProjectDetail() {
   const [savingReopen, setSavingReopen] = useState(false)
   const appreciationHeadingRef = useRef(null)
 
-  const loadProject = useCallback(async () => {
+  const loadProject = useCallback(async ({ silent = false } = {}) => {
     try {
       const result = await api.get(`/projects/${id}`)
       setProject(result)
@@ -40,16 +41,17 @@ export default function ProjectDetail() {
       toast.error(error.message)
       setProject(null)
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [id])
 
   useEffect(() => {
-    loadProject()
+    void loadProject()
     api.get('/users', { taskAssignees:true })
       .then(setUsers)
       .catch((error) => toast.error(error.message))
   }, [loadProject])
+  useAutoRefresh(loadProject)
 
   useEffect(() => {
     if (closureStep === 'appreciation') appreciationHeadingRef.current?.focus()

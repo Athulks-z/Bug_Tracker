@@ -124,7 +124,7 @@ function buildTaskBlockedRecipients(blocker, stakeholders) {
   return { to, cc };
 }
 
-function buildRecipients(assignee, stakeholders, senderEmail = SENDER_EMAIL) {
+function buildRecipients(assignee, stakeholders, senderEmail = SENDER_EMAIL, additionalRecipients = []) {
   const toEmail = String(assignee?.email || '').trim();
   const to = toEmail ? {
     userId: assignee._id || null,
@@ -137,11 +137,11 @@ function buildRecipients(assignee, stakeholders, senderEmail = SENDER_EMAIL) {
 
   const seen = new Set([to.email.toLowerCase()]);
   const cc = [];
-  for (const recipient of [{ email: senderEmail }, ...(stakeholders || [])]) {
+  for (const recipient of [{ email: senderEmail }, ...(stakeholders || []), ...(additionalRecipients || [])]) {
     const email = String(recipient.email || '').trim();
     const key = email.toLowerCase();
     if (!email || seen.has(key)) continue;
-    if (!EMAIL_PATTERN.test(email)) throw new Error('A project stakeholder does not have a valid email address');
+    if (!EMAIL_PATTERN.test(email)) throw new Error('An assignment email recipient does not have a valid email address');
     seen.add(key);
     cc.push({
       userId: recipient._id || null,
@@ -220,9 +220,11 @@ function buildAssignmentContent({ kind, item, project, assignedBy, clientUrl, ac
   return { subject, text, html };
 }
 
-async function queueAssignmentEmail({ kind, item, project, assigneeId, assignedBy }) {
+async function queueAssignmentEmail({ kind, item, project, assigneeId, assignedBy, ccUserIds }) {
   if (kind !== 'task') throw new TypeError('Unsupported assignment email type');
-  const [assigneeResult, stakeholderResult, assignedByResult] = await Promise.all([
+  const hasSelectedRecipients = ccUserIds !== undefined;
+  const selectedIds = hasSelectedRecipients ? [...new Set(ccUserIds.map(String))] : [];
+  const [assigneeResult, stakeholderResult, assignedByResult, additionalRecipientsResult] = await Promise.all([
     pool.query('SELECT id AS "_id", name, email FROM public.users WHERE id=$1 AND active', [String(assigneeId)]),
     pool.query(
       `SELECT u.id AS "_id", u.name, u.email
@@ -233,11 +235,23 @@ async function queueAssignmentEmail({ kind, item, project, assigneeId, assignedB
     ),
     assignedBy
       ? pool.query('SELECT name FROM public.users WHERE id=$1', [String(assignedBy)])
+      : Promise.resolve({ rows: [] }),
+    hasSelectedRecipients
+      ? pool.query(
+        'SELECT id AS "_id", name, email FROM public.users WHERE id=ANY($1::text[]) AND active',
+        [selectedIds]
+      )
       : Promise.resolve({ rows: [] })
   ]);
   const assignee = assigneeResult.rows[0];
   if (!assignee) throw new Error('Assigned user is not active or no longer exists');
-  const { to, cc } = buildRecipients(assignee, stakeholderResult.rows);
+  if (additionalRecipientsResult.rows.length !== selectedIds.length) {
+    throw new Error('One or more assignment email CC recipients are inactive or no longer exist');
+  }
+  const ccRecipients = hasSelectedRecipients
+    ? additionalRecipientsResult.rows
+    : stakeholderResult.rows;
+  const { to, cc } = buildRecipients(assignee, ccRecipients);
   const token = crypto.randomBytes(32).toString('hex');
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
   const responsePage = new URL('/assignment-response', `${(process.env.CLIENT_URL || 'http://localhost:3000').split(',')[0].trim().replace(/\/+$/, '')}/`);

@@ -68,6 +68,7 @@ export default function Tasks() {
   const [tasks, setTasks] = useState([])
   const [projects, setProjects] = useState([])
   const [users, setUsers] = useState([])
+  const [usersLoading, setUsersLoading] = useState(true)
   const [types, setTypes] = useState([])
   const [projectMilestones, setProjectMilestones] = useState([])
   const [loading, setLoading] = useState(true)
@@ -78,6 +79,7 @@ export default function Tasks() {
   const [saving, setSaving] = useState(false)
   const [pendingFiles, setPendingFiles] = useState([])
   const [uploadProgress, setUploadProgress] = useState({})
+  const [ccUserIds, setCcUserIds] = useState([])
   const [page, setPage] = useState(Number(searchParams.get('page') || 1))
   const [total, setTotal] = useState(0)
   const pageSize = 50
@@ -166,7 +168,10 @@ export default function Tasks() {
 
   useEffect(() => {
     api.get('/projects', { excludeClosed:true }).then(setProjects).catch((error) => toast.error(error.message))
-    api.get('/users', { taskAssignees:true }).then(setUsers).catch(() => {})
+    api.get('/users', { taskAssignees:true })
+      .then(setUsers)
+      .catch((error) => toast.error(error.message))
+      .finally(() => setUsersLoading(false))
     api.get('/tasks/types').then(setTypes).catch(() => {})
   }, [])
 
@@ -183,9 +188,18 @@ export default function Tasks() {
     setSearchParams(params, { replace:true })
   }, [filters, page, setSearchParams])
 
+  const stakeholderIdsForProject = (projectId) => {
+    const project = projects.find((item) => String(item._id) === String(projectId))
+    return (project?.stakeholders || [])
+      .map((stakeholder) => typeof stakeholder === 'object' ? stakeholder._id || stakeholder.id : stakeholder)
+      .filter((id) => id !== undefined && id !== null && id !== '')
+      .map(String)
+  }
+
   const openNew = () => {
     setEditTask(null)
     setPendingFiles([])
+    setCcUserIds(backlogMode ? [] : stakeholderIdsForProject(backlogProjectId))
     setForm({
       title:'', description:'', type:'', customTypeName:'', project:backlogMode ? backlogProjectId : '',milestone:'',
       assignee:'', status:'To do', priority:'Medium', startDate:backlogMode ? '' : today(), endDate:'',
@@ -197,6 +211,7 @@ export default function Tasks() {
   const openEdit = (task) => {
     setEditTask(task)
     setPendingFiles([])
+    setCcUserIds([])
     const status = task.status === 'In progress' ? 'In Progress' : task.status || 'To do'
     setForm({
       title:task.title || '', description:task.description || '', type:task.type || '',
@@ -259,6 +274,8 @@ export default function Tasks() {
         })
       } else if (backlogMode) {
         payload.mode = 'backlog'
+      } else if (payload.assignee) {
+        payload.ccUserIds = ccUserIds
       }
       const result = editTask
         ? await api.put(`/tasks/${editTask._id}`, payload)
@@ -451,7 +468,11 @@ export default function Tasks() {
 
               <div className="modal-form-grid">
                 {(!editTask || showTeamControls) && <div className="form-group"><label className="form-label">Project *</label>
-                  <select className="form-control" disabled={backlogMode && Boolean(backlogProjectId)} value={form.project} onChange={(event) => setForm((current) => ({ ...current,project:event.target.value,milestone:'' }))}>
+                  <select className="form-control" disabled={backlogMode && Boolean(backlogProjectId)} value={form.project} onChange={(event) => {
+                    const projectId = event.target.value
+                    setForm((current) => ({ ...current,project:projectId,milestone:'' }))
+                    setCcUserIds(stakeholderIdsForProject(projectId))
+                  }}>
                     <option value="">Select project</option>{projects.map((project) => <option key={project._id} value={project._id}>{project.name}</option>)}
                   </select>{inlineErrors.project && <span style={{ color:'#dc2626',fontSize:12 }}>{inlineErrors.project}</span>}
                 </div>}
@@ -489,6 +510,31 @@ export default function Tasks() {
                 <div className="form-group"><label className="form-label">End Date</label>
                   <input className="form-control" type="date" value={form.endDate} onChange={(event) => setForm((current) => ({ ...current,endDate:event.target.value }))} /></div>
               </div>
+
+              {!editTask && !backlogMode && form.assignee && <div className="form-group">
+                <span className="form-label">Assignment email CC</span>
+                <div role="group" aria-label="Assignment email CC recipients" style={{
+                  maxHeight:180,overflowY:'auto',border:'1px solid #e2e8f0',borderRadius:8,
+                  padding:'6px 10px',background:'#fff'
+                }}>
+                  {usersLoading
+                    ? <span style={{ color:'#64748b',fontSize:13 }}>Loading employees…</span>
+                    : users.length === 0
+                      ? <span style={{ color:'#64748b',fontSize:13 }}>No active employees available</span>
+                    : users.map((employee) => (
+                      <label key={employee._id} style={{ display:'flex',alignItems:'center',gap:8,padding:'6px 0',cursor:'pointer',fontSize:13 }}>
+                        <input type="checkbox" checked={ccUserIds.includes(String(employee._id))}
+                          onChange={() => setCcUserIds((current) => current.includes(String(employee._id))
+                            ? current.filter((id) => id !== String(employee._id))
+                            : [...current,String(employee._id)])} />
+                        <span>{employee.name}</span>
+                      </label>
+                    ))}
+                </div>
+                <span style={{ color:'#64748b',fontSize:12,marginTop:4,display:'block' }}>
+                  Project stakeholders are selected by default. Recipients are used only for this assignment email.
+                </span>
+              </div>}
 
               <div className="form-group">
                 <label className="form-label">Attachments</label>

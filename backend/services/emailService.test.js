@@ -29,6 +29,25 @@ test('assignment email sends to the assignee and deduplicates stakeholders in CC
   ]);
 });
 
+test('assignment email includes selected CC recipients without duplicating stakeholders or the assignee', () => {
+  const recipients = buildRecipients(
+    { _id:'assignee',name:'Assignee',email:'assignee@example.com' },
+    [{ _id:'stakeholder',name:'Stakeholder',email:'stakeholder@example.com' }],
+    'sender@example.com',
+    [
+      { _id:'stakeholder',name:'Stakeholder',email:'STAKEHOLDER@example.com' },
+      { _id:'assignee',name:'Assignee',email:'assignee@example.com' },
+      { _id:'employee',name:'Employee',email:'employee@example.com' }
+    ]
+  );
+
+  assert.deepEqual(recipients.cc.map((recipient) => recipient.email), [
+    'sender@example.com',
+    'stakeholder@example.com',
+    'employee@example.com'
+  ]);
+});
+
 test('assignment email requires an assignee email address', () => {
   assert.throws(() => buildRecipients({ name: 'No address' }, []), /valid email/);
   assert.throws(() => buildRecipients({ email: 'not-an-email' }, []), /valid email/);

@@ -233,7 +233,7 @@ router.post('/', auth, async (req, res) => {
   try {
     const { title, description, type, customTypeName, project, assignee, status, priority, startDate, endDate,
       severity, foundInVersion, fixedInVersion, targetRelease, sprint, estimatedHours, milestone,
-      mode } = req.body || {};
+      mode, ccUserIds } = req.body || {};
     if (mode !== undefined && !['task','backlog'].includes(mode)) {
       return res.status(400).json({ message:'Mode must be task or backlog' });
     }
@@ -249,6 +249,27 @@ router.post('/', auth, async (req, res) => {
     }
     if (!isBacklog && !['super_admin', 'admin', 'manager', 'employee'].includes(req.user.role)) {
       return res.status(403).json({ message: 'Your role is read-only' });
+    }
+    if (ccUserIds !== undefined && !Array.isArray(ccUserIds)) {
+      return res.status(400).json({ message:'CC recipients must be a list of active user IDs' });
+    }
+    const normalizedCcUserIds = [...new Set((ccUserIds || []).map((id) =>
+      typeof id === 'string' ? id.trim() : ''
+    ))];
+    if (normalizedCcUserIds.some((id) => !id)) {
+      return res.status(400).json({ message:'CC recipients must be valid active user IDs' });
+    }
+    if (normalizedCcUserIds.length && (!assignee || isBacklog)) {
+      return res.status(400).json({ message:'CC recipients can only be used for an assigned task' });
+    }
+    if (normalizedCcUserIds.length) {
+      const { rows } = await pool.query(
+        'SELECT id FROM public.users WHERE id=ANY($1::text[]) AND active',
+        [normalizedCcUserIds]
+      );
+      if (rows.length !== normalizedCcUserIds.length) {
+        return res.status(400).json({ message:'One or more CC recipients are missing or inactive' });
+      }
     }
     if (assignee) {
       const assigneeRecord = await store.findById('users', assignee);
@@ -278,7 +299,11 @@ router.post('/', auth, async (req, res) => {
     const response = await hydrateTask(task);
     if (assignee && !isBacklog) {
       try {
-        const queued = await queueAssignmentEmail({ kind: 'task', item: task, project: projectRecord, assigneeId: assignee, assignedBy: req.user._id });
+        const queued = await queueAssignmentEmail({
+          kind:'task',item:task,project:projectRecord,assigneeId:assignee,
+          assignedBy:req.user._id,
+          ccUserIds:ccUserIds === undefined ? undefined : normalizedCcUserIds
+        });
         response.emailNotification = {
           queued,
           ...(queued ? {} : { message: 'Task was reassigned before its notification could be queued.' })

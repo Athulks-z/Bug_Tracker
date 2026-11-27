@@ -1,7 +1,11 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const pool = require('../config/db');
-const { notifyRecipients } = require('./notificationService');
+const {
+  notifyRecipients,
+  checkStorageThreshold
+} = require('./notificationService');
+const { invalidateSettingsCache } = require('./settingsService');
 
 test('notification delivery excludes the actor, deduplicates recipients, and links task resources', async (t) => {
   const queries = [];
@@ -86,4 +90,73 @@ test('notification delivery rolls back to its savepoint on persistence failure',
 
   assert.equal(created, 0);
   assert.ok(queries.some((sql) => sql.includes('ROLLBACK')));
+});
+
+test('storage threshold notifications target active admins only and deduplicate each UTC day', async (t) => {
+  const originalConnect = pool.connect;
+  const originalQuery = pool.query;
+  const insertedKeys = new Set();
+  const insertedNotifications = [];
+  const recipientQueries = [];
+
+  invalidateSettingsCache();
+  pool.query = async (sql, values = []) => {
+    if (String(sql).includes('SELECT key,value FROM public.app_settings')) return { rows:[] };
+    if (String(sql).includes('SELECT id FROM public.users')) {
+      recipientQueries.push({ sql, values });
+      return { rows:[{ id:'qa-admin' },{ id:'qa-super-admin' }] };
+    }
+    return originalQuery.call(pool, sql, values);
+  };
+  pool.connect = async () => ({
+    async query(sql, values = []) {
+      if (String(sql).includes('INSERT INTO public.notifications')) {
+        const key = values[11];
+        if (insertedKeys.has(key)) return { rows:[] };
+        insertedKeys.add(key);
+        insertedNotifications.push({ key, values });
+        return { rows:[{ id:`notification-${insertedNotifications.length}` }] };
+      }
+      return { rows:[], rowCount:1 };
+    },
+    release() {}
+  });
+  t.after(() => {
+    pool.connect = originalConnect;
+    pool.query = originalQuery;
+    invalidateSettingsCache();
+  });
+
+  const statsProvider = async () => ({
+    totalUsedBytes: 800,
+    limitBytes: 1000
+  });
+  const day = new Date('2026-11-27T00:15:00.000Z');
+  assert.equal(await checkStorageThreshold(statsProvider, day), 2);
+  assert.equal(await checkStorageThreshold(statsProvider, day), 0);
+
+  assert.equal(recipientQueries.length, 2);
+  assert.deepEqual(recipientQueries[0].values, [['admin','super_admin']]);
+  assert.match(recipientQueries[0].sql, /WHERE active AND role_code/);
+  assert.deepEqual(insertedNotifications.map(({ key }) => key), [
+    'storage-capacity:2026-11-27:qa-admin',
+    'storage-capacity:2026-11-27:qa-super-admin'
+  ]);
+  assert.ok(insertedNotifications.every(({ values }) => values[3] === 'storage_limit_warning'));
+  assert.ok(insertedNotifications.every(({ values }) => values[6].includes('80%')));
+  assert.ok(insertedNotifications.every(({ values }) => values[7] === '/settings'));
+});
+
+test('storage alerts do not fire below threshold or when no quota is configured', async () => {
+  const queryCountBefore = 0;
+  const belowThreshold = await checkStorageThreshold(async () => ({
+    totalUsedBytes:799,
+    limitBytes:1000
+  }));
+  const noQuota = await checkStorageThreshold(async () => ({
+    totalUsedBytes:100000,
+    limitBytes:null
+  }));
+  assert.equal(belowThreshold, queryCountBefore);
+  assert.equal(noQuota, queryCountBefore);
 });

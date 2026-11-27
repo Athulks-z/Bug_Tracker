@@ -114,7 +114,11 @@ async function startServer() {
         require('./services/emailService').validateEmailConfig();
         await require('./services/data').store.initialize();
         require('./services/emailService').startEmailWorker();
-        require('./services/notificationService').startNotificationCleanup();
+        const notificationService = require('./services/notificationService');
+        notificationService.startNotificationCleanup();
+        notificationService.startStorageAlertMonitor(
+            require('./routes/settings').readStorageStats
+        );
         app.listen(config.port, '0.0.0.0', () => {
             console.info(`Bug Tracker API listening on port ${config.port} with PostgreSQL storage`);
         });

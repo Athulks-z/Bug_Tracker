@@ -2,6 +2,9 @@ const { randomUUID } = require('crypto');
 const pool = require('../config/db');
 const { getSettings } = require('./settingsService');
 
+const STORAGE_ALERT_INTERVAL_MS = 60 * 60 * 1000;
+const STORAGE_ALERT_ROLES = ['admin', 'super_admin'];
+
 async function insertNotification(client, notification) {
   const {
     userId, actorUserId, type, title, message, link, entityType, entityId,
@@ -145,6 +148,40 @@ async function cleanupReadNotifications() {
   return result.rowCount;
 }
 
+async function checkStorageThreshold(readStorageStats, now = new Date()) {
+  if (typeof readStorageStats !== 'function') {
+    throw new TypeError('A storage statistics provider is required');
+  }
+  const stats = await readStorageStats();
+  if (!stats.limitBytes || stats.limitBytes <= 0
+    || stats.totalUsedBytes / stats.limitBytes < 0.8) return 0;
+
+  const { rows } = await pool.query(
+    `SELECT id FROM public.users
+     WHERE active AND role_code = ANY($1::text[])
+     ORDER BY id`,
+    [STORAGE_ALERT_ROLES]
+  );
+  const day = now.toISOString().slice(0, 10);
+  const percentUsed = Math.floor(stats.totalUsedBytes / stats.limitBytes * 100);
+  return notifyRecipients({
+    recipients: rows.map((row) => row.id),
+    type: 'storage_limit_warning',
+    title: 'Storage usage is high',
+    message: `Task Tracker storage is at ${percentUsed}% of its configured limit. Please review database and uploaded-file storage.`,
+    link: '/settings',
+    idempotencyKey: `storage-capacity:${day}`
+  });
+}
+
+function startStorageAlertMonitor(readStorageStats) {
+  const runCheck = () => checkStorageThreshold(readStorageStats).catch((error) => {
+    console.error('Storage threshold check failed:', error.name);
+  });
+  void runCheck();
+  return setInterval(runCheck, STORAGE_ALERT_INTERVAL_MS);
+}
+
 function startNotificationCleanup() {
   const runCleanup = () => cleanupReadNotifications().catch((error) => {
     console.error('Read notification cleanup failed:', error.name);
@@ -155,5 +192,6 @@ function startNotificationCleanup() {
 
 module.exports = {
   notify, notifyRecipients, notifyTaskStakeholders,
-  cleanupReadNotifications, startNotificationCleanup
+  cleanupReadNotifications, checkStorageThreshold,
+  startStorageAlertMonitor, startNotificationCleanup
 };
